@@ -4,12 +4,12 @@ set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 [[ $EUID == 0 ]] || { echo 'Run: sudo ./setup.sh' >&2; exit 1; }
 [[ $(uname -s) == Linux ]] || { echo 'Linux is required.' >&2; exit 1; }
-if ! command -v python3 >/dev/null; then
+if ! command -v python3 >/dev/null || ! command -v tmux >/dev/null; then
     if command -v apt-get >/dev/null; then
         apt-get update
-        apt-get install -y python3
+        apt-get install -y python3 tmux
     else
-        echo 'Install python3 using your package manager, then rerun setup.' >&2
+        echo 'Install python3 and tmux using your package manager, then rerun setup.' >&2
         exit 1
     fi
 fi

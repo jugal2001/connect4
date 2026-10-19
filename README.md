@@ -5,8 +5,8 @@ Each player has a distinct symbol (`X`, `O`, or `@`) and one **Pop token**.
 Connect four of your own discs to win. There are no teams, alliances, or shared
 victories. The referee randomly selects the initial turn order.
 
-Only Linux and Python 3.8+ are needed. No pip packages, tmux, or graphics
-framework. **All socket communication is in [`communication.py`](communication.py).**
+Linux and Python 3.8+ are needed; tmux is also needed for the three-pane mode.
+No pip packages are required. **All socket communication is in [`communication.py`](communication.py).**
 
 ## Download and play
 
@@ -15,14 +15,32 @@ tar -xzf connect4-mayhem.tgz
 cd connect4-mayhem
 ```
 
-If Python is missing on Ubuntu/Debian:
+Install the dependencies on Ubuntu/Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y python3
+sudo apt install -y python3 tmux
 ```
 
 There is **one play script** for hosting, joining, and bot mode.
+
+### Open all three players at once
+
+```bash
+./launch_game.sh --windows
+```
+
+This opens one tmux window with three side-by-side panes named Player1,
+Player2, and Player3. Each runs an independent human client. All three join
+automatically, and the game starts after the 30-second lobby. Use a wide terminal.
+Press **Ctrl-B**, release, then an **arrow key** to switch panes. Press
+**Ctrl-B**, then **Z** to zoom the current pane or restore the three-pane view.
+Type `quit` in any player pane to end the match and close the game session.
+Outside tmux, detaching with **Ctrl-B**, then **D** also stops this game.
+
+This mode uses your current Linux account for all three players. The separate
+Linux-user setup below remains available. `sudo ./setup.sh` also installs tmux
+if missing; it additionally creates the classroom accounts and installs the game.
 
 ### Play alone against two bots
 
@@ -189,7 +207,7 @@ classroom-mode test. The archive alone is not yet a complete submission.
 | **`communication.py`** | **Entire transport library: sockets, framing, threads, queues, peer UIDs** |
 | `server.py` | Lobby, bot lifecycle, three-player rules, board, validation, routing |
 | `client.py` | Named human client or bot, command parsing, terminal display |
-| `launch_game.sh` | One script to host, join, or play against two bots |
+| `launch_game.sh` | Host, join, play against two bots, or open three tmux panes |
 | `setup.sh` | Optional separate-user system installation |
 | `tests/` | Rules, stream framing, lobby, bots, privacy, and integration checks |
 
