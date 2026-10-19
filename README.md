@@ -1,7 +1,9 @@
 # Connect-4 Mayhem
 
 Three players, one public 7-column × 6-row board. Drop discs in turn; the first
-player to connect four of their own discs wins. Whisper deals and form private
+player to connect four of their own discs wins. Each player also gets one
+**pop token** to remove their own bottom disc and shift a whole column.
+Whisper deals and form private
 alliances, but only one player can win.
 
 **Start with one human and two bots in one terminal.** You do not need to
@@ -27,7 +29,9 @@ sudo apt install -y python3
 
 You are **player1 (X)**. Two independent bot processes play **player2 (O)** and
 **player3 (@)**. When you see **YOUR TURN**, type `drop 4`, or simply `4`.
-The bots then play automatically. There is no clock: take time to think or chat.
+The bots then play automatically. You can also use `pop 4` once per game if
+the bottom disc in column 4 is yours. Remaining pop tokens are shown below
+the board (`X=1 O=1 @=1`). There is no clock: take time to think or chat.
 The board scrolls after every move, so there is only one view to follow.
 
 ```text
@@ -65,17 +69,25 @@ Linux UID. Use the classroom mode below to meet the separate-user requirement.
 
 1. Turns rotate **player1 → player2 → player3 → player1**.
 2. On your turn, choose a column from 1 to 7. Your disc falls to the lowest
-   empty square. You cannot move an existing disc.
+   empty square. Alternatively, spend your one pop token: `pop <column>` removes
+   **your own bottom disc**, and every disc above it falls one square. A pop
+   uses your turn. You cannot pop an empty column or another player's disc.
 3. Four or more of **your own symbol** in a horizontal, vertical, or diagonal
    line wins immediately. Discs from allies do not combine into a winning line.
-4. A full column is rejected without losing your turn. A full board with no
-   winning line is a draw.
+   After a pop, the whole board is checked: exactly one player with a winning
+   line wins, **even if it is your opponent**. If two or three players have
+   winning lines at once, the game is a draw. Several lines for the same player
+   still count as just that player's win.
+4. A drop into a full column is rejected without losing your turn. You may pop
+   a full column if its bottom disc is yours and you still have your token.
+   Invalid pops do not spend your token or turn. A completely full board with
+   no winning line ends in a draw immediately, even if pop tokens remain.
 5. Chat, whisper, and negotiate at any time, including outside your turn.
 6. An alliance is a private two-player chat group, not a shared victory or a
    change to turn order. Offers require acceptance. You may leave at any time.
    Promises are not enforced: bluffing and betrayal are allowed.
 
-There is no elimination, hidden board, time limit, or special power to learn.
+There is no elimination, hidden board, or time limit.
 If a player disconnects, the match is cancelled for everyone; it is not a win.
 There is no joining or reconnecting after the match starts.
 
@@ -84,6 +96,7 @@ There is no joining or reconnecting after the match starts.
 | Command | What it does |
 | --- | --- |
 | `drop 4` or `4` | Drop your disc in column 4 |
+| `pop 4` | Spend your one token to remove your bottom disc from column 4 |
 | `say Block player3 in column 2!` | Public message |
 | `/w player2 I'll block left if you block right` | Private message/deal offer |
 | `alliance player2` | Privately invite player2 to an alliance |
@@ -99,7 +112,10 @@ Each player has at most one partner. A new invitation replaces the previous
 pending invitation to its recipient. Alliance membership is announced only to
 the two members. The third player receives no invitation or alliance chat.
 
-**Bots choose random legal columns**, not clever moves. They automatically
+**Bots choose random legal moves**, not clever moves. When they have a legal
+pop, they choose it with 25% probability; otherwise, they drop in a random
+non-full column. They never pop another player's disc or reuse a token.
+They automatically
 accept valid alliance offers and send an alliance greeting, so you can test
 unicast offers and multicast chat alone. They do not understand promises or
 change their strategy based on messages. Bot choices use separate seeds.
@@ -227,6 +243,7 @@ Example protocol messages:
 ```json
 {"type":"join","player":"player1"}
 {"type":"drop","column":4,"move":1}
+{"type":"pop","column":4,"move":4}
 {"type":"chat","channel":"private","target":"player2","text":"Block column 7?"}
 {"type":"alliance","operation":"invite","target":"player2"}
 {"type":"alliance","operation":"accept","target":"player1"}
@@ -236,6 +253,9 @@ Example protocol messages:
 The server identifies senders from their connections. It does not trust a
 client-supplied sender, board, turn, or alliance membership. The referee and
 machine administrators are trusted; this is not a hardened public service.
+Public `state` messages include `pops` (each player's remaining token count)
+and `draw_reason`. The referee validates pop ownership, tokens, and turn/move
+numbers; clients cannot grant themselves additional tokens.
 
 ## Verify and package
 

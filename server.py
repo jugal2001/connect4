@@ -18,38 +18,70 @@ class Game:
         self.move = 1
         self.winner = None
         self.draw = False
+        self.draw_reason = None
+        self.pops = {player: 1 for player in PLAYERS}
 
-    def drop(self, player, column):
+    def validate_turn(self, player, column):
         if self.winner or self.draw:
             raise ValueError("The game has finished.")
         if player != PLAYERS[self.turn]:
             raise ValueError(f"It is {PLAYERS[self.turn]}'s turn.")
         if type(column) is not int or not 1 <= column <= COLS:
             raise ValueError("Choose a column from 1 to 7.")
+
+    def drop(self, player, column):
+        self.validate_turn(player, column)
         col = column - 1
         if self.board[0][col] != ".":
             raise ValueError("That column is full. Choose another.")
         row = next(r for r in range(ROWS - 1, -1, -1) if self.board[r][col] == ".")
-        symbol = SYMBOLS[player]
-        self.board[row][col] = symbol
-        # Count matching discs in both directions through the new disc.
-        for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
-            count = 1
-            for sign in (-1, 1):
-                r, c = row + sign * dr, col + sign * dc
-                while 0 <= r < ROWS and 0 <= c < COLS and self.board[r][c] == symbol:
-                    count += 1
-                    r, c = r + sign * dr, c + sign * dc
-            if count >= 4:
-                self.winner = player
-        self.draw = not self.winner and all(cell != "." for cell in self.board[0])
+        self.board[row][col] = SYMBOLS[player]
+        self.finish_turn()
+
+    def pop(self, player, column):
+        self.validate_turn(player, column)
+        col = column - 1
+        if not self.pops[player]:
+            raise ValueError("You already used your pop token.")
+        if self.board[-1][col] != SYMBOLS[player]:
+            raise ValueError("You can only pop your own bottom disc.")
+        # Shift from bottom to top so no disc is overwritten before it moves.
+        for row in range(ROWS - 1, 0, -1):
+            self.board[row][col] = self.board[row - 1][col]
+        self.board[0][col] = "."
+        self.pops[player] -= 1
+        self.finish_turn()
+
+    def finish_turn(self):
+        # A pop can create someone else's line, or multiple winners. Scan the
+        # entire small board after either action, using the same simple rule.
+        winning_symbols = set()
+        for row in range(ROWS):
+            for col in range(COLS):
+                symbol = self.board[row][col]
+                if symbol == ".":
+                    continue
+                for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
+                    if all(0 <= row + i * dr < ROWS and 0 <= col + i * dc < COLS
+                           and self.board[row + i * dr][col + i * dc] == symbol
+                           for i in range(4)):
+                        winning_symbols.add(symbol)
+        if len(winning_symbols) == 1:
+            self.winner = next(p for p in PLAYERS if SYMBOLS[p] in winning_symbols)
+        elif len(winning_symbols) > 1:
+            self.draw = True
+            self.draw_reason = "Multiple players connected four at once."
+        elif all(cell != "." for cell in self.board[0]):
+            self.draw = True
+            self.draw_reason = "The board is full."
         if not self.winner and not self.draw:
             self.turn = (self.turn + 1) % len(PLAYERS)
             self.move += 1
 
     def state(self):
         return {"type": "state", "board": self.board, "turn": PLAYERS[self.turn],
-                "move": self.move, "winner": self.winner, "draw": self.draw}
+                "move": self.move, "winner": self.winner, "draw": self.draw,
+                "pops": self.pops, "draw_reason": self.draw_reason}
 
 
 class Alliances:
@@ -148,16 +180,21 @@ def run(args):
                     continue
                 if not player:
                     raise ValueError("Join the lobby first.")
-                if action == "drop":
+                if action in ("drop", "pop"):
                     if not game:
                         raise ValueError("Wait for all three players.")
                     if message.get("move") != game.move:
                         raise ValueError("That command used an older board. Type look and try again.")
-                    game.drop(player, message.get("column"))
-                    transport.broadcast({"type": "info", "text": f"{player} ({SYMBOLS[player]}) dropped in column {message['column']}."})
+                    if action == "pop":
+                        game.pop(player, message.get("column"))
+                        description = "popped their bottom disc from"
+                    else:
+                        game.drop(player, message.get("column"))
+                        description = "dropped in"
+                    transport.broadcast({"type": "info", "text": f"{player} ({SYMBOLS[player]}) {description} column {message['column']}."})
                     transport.broadcast(game.state())
                     if game.winner or game.draw:
-                        result = f"{game.winner} wins! Four connected!" if game.winner else "Draw! The board is full."
+                        result = f"{game.winner} wins! Four connected!" if game.winner else f"Draw! {game.draw_reason}"
                         transport.broadcast({"type": "end", "text": result})
                         print(result, flush=True)
                         return

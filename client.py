@@ -10,6 +10,7 @@ import time
 import communication
 
 HELP = """drop 4                 Drop in column 4 (a bare number also works).
+pop 4                  Remove YOUR bottom disc in column 4; once per game.
 say MESSAGE            Talk to everyone.
 /w player2 MESSAGE     Whisper / offer a deal to one player.
 alliance player2       Invite someone to a private alliance.
@@ -29,9 +30,10 @@ def show_board(state, player):
         print("  | " + " ".join(row) + " |")
     print("  +---------------+")
     print(f"player1=X  player2=O  player3=@ | You: {player} ({symbols[player]})")
+    print("Pop tokens: " + "  ".join(f"{symbols[p]}={tokens}" for p, tokens in state["pops"].items()))
     if not state["winner"] and not state["draw"]:
         if state["turn"] == player:
-            print("YOUR TURN — enter drop 1 to drop 7:", flush=True)
+            print("YOUR TURN — drop <1-7>, or pop <1-7> using your token:", flush=True)
         else:
             print(f"Waiting for {state['turn']} ({symbols[state['turn']]}). You can still chat.", flush=True)
 
@@ -44,14 +46,14 @@ def parse_command(line, move):
     text = parts[1] if len(parts) == 2 else ""
     if command.isdigit():
         command, text = "drop", command
-    if command == "drop":
+    if command in ("drop", "pop"):
         if move is None:
             raise ValueError("Wait for three players to join.")
         try:
             column = int(text)
         except ValueError:
-            raise ValueError("Use drop followed by a column number, such as drop 4.") from None
-        return {"type": "drop", "column": column, "move": move}
+            raise ValueError(f"Use {command} followed by a column number, such as {command} 4.") from None
+        return {"type": command, "column": column, "move": move}
     if command == "say":
         return {"type": "chat", "channel": "all", "text": text}
     if command == "/w":
@@ -73,6 +75,17 @@ def parse_command(line, move):
     if command == "look":
         return {"type": "look"}
     raise ValueError("Unknown command. Type help.")
+
+
+def choose_bot_move(state, player, rng):
+    """Usually drop; use a legal pop on about one quarter of eligible turns."""
+    symbol = {"player1": "X", "player2": "O", "player3": "@"}[player]
+    pops = [i + 1 for i, cell in enumerate(state["board"][-1])
+            if cell == symbol and state["pops"][player]]
+    if pops and rng.random() < 0.25:
+        return {"type": "pop", "column": rng.choice(pops), "move": state["move"]}
+    drops = [i + 1 for i, cell in enumerate(state["board"][0]) if cell == "."]
+    return {"type": "drop", "column": rng.choice(drops), "move": state["move"]}
 
 
 def run(args):
@@ -116,7 +129,7 @@ def run(args):
                     if args.bot and message["channel"] == "private" and message["sender"] not in bot_replied:
                         bot_replied.add(message["sender"])
                         client.send({"type": "chat", "channel": "private", "target": message["sender"],
-                                     "text": "I'm a random bot. I accept alliances, but my drops stay random!"})
+                                     "text": "I'm a random bot. I accept alliances, but my drops and pops stay random!"})
                 elif kind == "disconnected":
                     print("Disconnected from referee.")
                     return
@@ -134,8 +147,7 @@ def run(args):
                 if (state and not state["winner"] and not state["draw"]
                         and state["turn"] == args.player and state["move"] != bot_move_sent
                         and time.monotonic() >= bot_due):
-                    columns = [i + 1 for i, cell in enumerate(state["board"][0]) if cell == "."]
-                    client.send({"type": "drop", "column": rng.choice(columns), "move": state["move"]})
+                    client.send(choose_bot_move(state, args.player, rng))
                     bot_move_sent = state["move"]
                 continue
             try:
@@ -150,8 +162,8 @@ def run(args):
             try:
                 outgoing = parse_command(line, move)
                 if outgoing:
-                    if outgoing["type"] == "drop" and turn != args.player:
-                        raise ValueError("Wait for YOUR TURN before dropping. You can still chat.")
+                    if outgoing["type"] in ("drop", "pop") and turn != args.player:
+                        raise ValueError("Wait for YOUR TURN before dropping or popping. You can still chat.")
                     client.send(outgoing)
             except ValueError as error:
                 print(error, flush=True)

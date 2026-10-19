@@ -90,6 +90,28 @@ class IntegrationTests(unittest.TestCase):
             self.assertIn("player1 wins", self.until(client, "end")["text"])
         self.assertEqual(self.server.wait(timeout=5), 0)
 
+    def test_pop_broadcast_token_and_invalid_reuse(self):
+        self.start()
+        clients = self.three()
+        for number, (kind, column) in enumerate(
+                [("drop", 1), ("drop", 1), ("drop", 2), ("pop", 1),
+                 ("drop", 2), ("drop", 3)], 1):
+            clients[(number - 1) % 3].send({"type": kind, "column": column, "move": number})
+            states = [self.until(c, "state") for c in clients]
+            self.assertEqual(states[0], states[1])
+            self.assertEqual(states[1], states[2])
+            if kind == "pop":
+                self.assertEqual(states[0]["pops"]["player1"], 0)
+                self.assertEqual(states[0]["board"][5][0], "O")
+                self.assertEqual(states[0]["board"][4][0], ".")
+                self.assertEqual(states[0]["turn"], "player2")
+        clients[0].send({"type": "pop", "column": 1, "move": 4})
+        self.assertIn("older board", self.until(clients[0], "error")["text"])
+        clients[0].send({"type": "pop", "column": 1, "move": 7})
+        self.assertIn("already used", self.until(clients[0], "error")["text"])
+        clients[0].send({"type": "look"})
+        self.assertEqual(self.until(clients[0], "state"), states[0])
+
     def test_whispers_alliance_consent_privacy_and_leave(self):
         self.start()
         a, b, c = self.three()

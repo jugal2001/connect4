@@ -1,6 +1,7 @@
+import random
 import unittest
 
-from client import parse_command
+from client import choose_bot_move, parse_command
 from server import Alliances, Game, PLAYERS
 
 
@@ -78,6 +79,95 @@ class GameTests(unittest.TestCase):
             for player, column in zip(PLAYERS, (1, 2, 3)):
                 game.drop(player, column)
         self.assertIsNone(game.winner)
+
+
+class PopTests(unittest.TestCase):
+    def test_pop_shifts_column_spends_token_and_uses_turn(self):
+        game = Game()
+        for player in PLAYERS:
+            game.drop(player, 4)
+        game.pop("player1", 4)
+        self.assertEqual([game.board[r][3] for r in (5, 4, 3)], ["O", "@", "."])
+        self.assertEqual(game.pops, {"player1": 0, "player2": 1, "player3": 1})
+        self.assertEqual(game.turn, 1)
+        self.assertEqual(game.move, 5)
+        self.assertEqual(game.state()["pops"]["player1"], 0)
+
+    def test_invalid_pop_changes_nothing(self):
+        game = Game()
+        game.board[5][0] = "O"
+        before = [row[:] for row in game.board]
+        for player, column in (("player1", 1), ("player1", 2), ("player2", 1),
+                               ("player1", 0), ("player1", 8), ("player1", True),
+                               ("player1", None)):
+            with self.assertRaises(ValueError):
+                game.pop(player, column)
+            self.assertEqual(game.board, before)
+            self.assertEqual(game.move, 1)
+            self.assertEqual(list(game.pops.values()), [1, 1, 1])
+
+    def test_token_cannot_be_used_twice(self):
+        game = Game()
+        game.board[5][0] = game.board[4][0] = "X"
+        game.pop("player1", 1)
+        game.drop("player2", 2)
+        game.drop("player3", 3)
+        before = [row[:] for row in game.board]
+        with self.assertRaisesRegex(ValueError, "already used"):
+            game.pop("player1", 1)
+        self.assertEqual(game.board, before)
+        self.assertEqual(game.turn, 0)
+        self.assertEqual(game.pops["player1"], 0)
+
+    def test_pop_can_give_opponent_a_win(self):
+        game = Game()
+        game.board[5] = list("OOOX...")
+        game.board[4][3] = "O"
+        game.pop("player1", 4)
+        self.assertEqual(game.winner, "player2")
+        self.assertFalse(game.draw)
+        with self.assertRaises(ValueError):
+            game.pop("player1", 4)
+
+    def test_pop_can_win_for_its_player(self):
+        game = Game()
+        game.board[5] = list("O@OX...")
+        game.board[4] = list("XXXO...")
+        game.board[3][3] = "X"
+        game.pop("player1", 4)
+        self.assertEqual(game.winner, "player1")
+
+    def test_pop_creates_two_winners_and_draw(self):
+        game = Game()
+        game.board[5] = list("OOOX...")
+        game.board[4] = list("@@@O...")
+        game.board[3][3] = "@"
+        game.pop("player1", 4)
+        self.assertTrue(game.draw)
+        self.assertIsNone(game.winner)
+        self.assertIn("Multiple players", game.draw_reason)
+
+    def test_pop_can_remove_a_single_disc_or_open_a_full_column(self):
+        for contents in (["."] * 5 + ["X"], list("XO@XOX")):
+            game = Game()
+            for row, symbol in enumerate(contents):
+                game.board[row][0] = symbol
+            game.pop("player1", 1)
+            self.assertEqual([row[0] for row in game.board], ["."] + contents[:-1])
+
+    def test_pop_command_and_bot_legal_choices(self):
+        self.assertEqual(parse_command("pop 4", 8), {"type": "pop", "column": 4, "move": 8})
+        with self.assertRaises(ValueError):
+            parse_command("pop potato", 8)
+        game = Game()
+        game.board[5][:3] = ["X", "O", "@"]
+        rng = random.Random(42)
+        moves = [choose_bot_move(game.state(), "player1", rng) for _ in range(100)]
+        self.assertEqual({m["type"] for m in moves}, {"drop", "pop"})
+        self.assertTrue(all(m["column"] == 1 for m in moves if m["type"] == "pop"))
+        game.pops["player1"] = 0
+        self.assertTrue(all(choose_bot_move(game.state(), "player1", rng)["type"] == "drop"
+                            for _ in range(100)))
 
 
 class AllianceTests(unittest.TestCase):
