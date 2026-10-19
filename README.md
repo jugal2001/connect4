@@ -33,7 +33,7 @@ There is **one play script** for hosting, joining, and bot mode.
 You join as **Host**. Two independent bot processes fill the other seats
 immediately; no second terminal or joining delay is needed. When the display
 says **YOUR TURN**, type `drop 4`, or simply `4`. Bots make random legal drops
-and occasionally use a legal pop; they don't understand strategic suggestions.
+and occasionally use a legal pop. Bots do not respond to chat.
 
 ### Play with classmates
 
@@ -79,20 +79,6 @@ for everyone. A guest's launcher does not directly own or stop the referee.
 Start the launcher again for a fresh match. An existing socket is never
 silently replaced. After SIGKILL, remove a stale socket only after confirming
 that its referee is no longer running.
-
-Advanced Python entry points are also available:
-
-```bash
-# Referee only, for a short repeatable test:
-python3 server.py --demo --bots --lobby-seconds 5 --seed 42
-# Join from another terminal:
-python3 client.py Alice
-```
-
-The seed controls turn order and bot seeds; reproducing a game also requires
-the same joining order and actions. Use `--socket PATH` on both Python commands
-for parallel matches; the custom socket's parent directory must already exist.
-Those advanced flags are deliberately not part of the simple launcher.
 
 ## Rules
 
@@ -145,10 +131,10 @@ tool, not a second play script.
 ```bash
 sudo ./setup.sh
 sudo install -d -o c4-referee -g connect4 -m 2750 /tmp/connect4-class
-sudo -u c4-referee python3 /opt/connect4-mayhem/server.py --socket /tmp/connect4-class/game.sock --lobby-seconds 120
+sudo -u c4-referee python3 /opt/connect4-mayhem/server.py --socket /tmp/connect4-class/game.sock
 ```
 
-Join these three clients in separate terminals during the joining period:
+Prepare three terminals first, then join these clients within 30 seconds:
 
 ```bash
 sudo -u c4-player1 python3 /opt/connect4-mayhem/client.py Alice --socket /tmp/connect4-class/game.sock
@@ -171,12 +157,6 @@ Automatic bot filling is a demo feature: those children share the referee's
 UID. Strict mode requires three joined clients and cancels an underfilled lobby.
 You can append `--bot` to any of the separate-account client commands above to
 run an automated player under that account and retain distinct UIDs.
-
-Existing individual Linux accounts may instead join if added to `connect4`
-(log in again after group changes); they run the client directly without sudo.
-Keep the referee on a different account. SSH may supply terminals on the same
-Linux machine, but the game uses local sockets rather than network gameplay.
-Locked service accounts cannot log in through SSH themselves.
 
 ## Does this meet the assignment?
 
@@ -268,9 +248,8 @@ Example application messages:
 Public state includes `board`, `symbols`, `order`, `turn`, `move`, `pops`,
 `winner` (a player's name), `draw`, and `draw_reason`. Lobby messages include
 names, capacity (3), time remaining, bot-fill setting, and whether joining is
-open. Stale move numbers are rejected. Server-created bots use private joining
-tokens to enter reserved seats after public joining ends. The referee and
-machine administrators are trusted; this is not a hardened public service.
+open. Stale move numbers are rejected. Names reserved for server-created bots can join after the lobby closes.
+This classroom game trusts the local players; bot names are not authenticated.
 
 ## Verify and package
 

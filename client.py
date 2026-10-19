@@ -78,10 +78,8 @@ def run(args):
     typed = queue.Queue()
     state = None
     input_state = [None, None]  # move number and whose turn when input is typed
-    rng = random.Random(args.seed)
+    rng = random.Random()
     bot_move_sent = None
-    bot_due = 0
-    bot_replied = set()
 
     def keyboard():
         while True:
@@ -97,15 +95,13 @@ def run(args):
     if not args.bot:
         print(HELP, flush=True)
         threading.Thread(target=keyboard, daemon=True).start()
-    client.send({"type": "join", "name": args.name, "token": args.token})
+    client.send({"type": "join", "name": args.name})
     try:
         while True:
             message = client.receive(timeout=0.05)
             if message:
                 kind = message.get("type")
                 if kind == "state":
-                    if not state or message["move"] != state["move"]:
-                        bot_due = time.monotonic() + args.delay
                     state = message
                     input_state[:] = [state["move"], state["turn"]]
                     show_board(state, args.name)
@@ -116,10 +112,6 @@ def run(args):
                           + ("Bots will fill empty seats." if message['bots'] else "Three humans required."), flush=True)
                 elif kind == "chat":
                     print(f"[{message['channel']}] {message['sender']}: {message['text']}", flush=True)
-                    if args.bot and message["channel"] == "private" and message["sender"] not in bot_replied:
-                        bot_replied.add(message["sender"])
-                        client.send({"type": "chat", "channel": "private", "target": message["sender"],
-                                     "text": "I'm a random bot. My drops and pops are random; chat does not control me!"})
                 elif kind == "disconnected":
                     print("Disconnected from referee.")
                     return
@@ -130,8 +122,8 @@ def run(args):
 
             if args.bot:
                 if (state and not state["winner"] and not state["draw"]
-                        and state["turn"] == args.name and state["move"] != bot_move_sent
-                        and time.monotonic() >= bot_due):
+                        and state["turn"] == args.name and state["move"] != bot_move_sent):
+                    time.sleep(0.3)
                     client.send(choose_bot_move(state, args.name, rng))
                     bot_move_sent = state["move"]
                 continue
@@ -160,13 +152,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("name", help="display name, e.g. Alice (not a Linux account login)")
     parser.add_argument("--socket", default=communication.default_socket())
-    parser.add_argument("--token", help=argparse.SUPPRESS)
     parser.add_argument("--bot", action="store_true", help="choose random legal columns without keyboard input")
-    parser.add_argument("--seed", type=int)
-    parser.add_argument("--delay", type=float, default=0.6, help="seconds before each bot move")
     args = parser.parse_args()
-    if not 0 <= args.delay <= 60:
-        parser.error("--delay must be between 0 and 60 seconds")
     try:
         run(args)
     except KeyboardInterrupt:

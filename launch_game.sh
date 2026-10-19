@@ -29,9 +29,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-options=(--demo --bots)
+options=(--demo)
 if [[ ${1:-} == --bots ]]; then
-    options+=(--solo)
+    options+=(--bots)
     echo 'You are Host. Starting with two bots.'
 else
     echo 'You are Host. Others have 30 seconds to join: ./launch_game.sh THEIR-NAME'

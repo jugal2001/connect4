@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import random
 import re
-import secrets
 import signal
 import subprocess
 import sys
@@ -100,15 +99,15 @@ def valid_name(name):
     return isinstance(name, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,19}", name) is not None
 
 
-def run(args):
+def run(args, lobby_seconds=30):
     transport = communication.Server(args.socket)
     identities = {}
     players = {}  # display name -> connection ID (Linux UID is checked separately)
     game = None
-    rng = random.Random(args.seed)
-    deadline = time.monotonic() + args.lobby_seconds
+    rng = random.Random()
+    deadline = time.monotonic() + lobby_seconds
     lobby_open = True
-    expected_bots = {}  # name -> private joining token
+    expected_bots = set()  # reserved names for the clients we launch
     bot_processes = []
     roster = []
     bot_deadline = None
@@ -118,19 +117,19 @@ def run(args):
 
     def lobby_view():
         return {"type": "lobby", "names": list(players),
-                "seconds": 0 if args.solo else max(0, int(deadline - time.monotonic() + 0.999)),
-                "bots": args.bots, "open": lobby_open, "capacity": PLAYER_COUNT}
+                "seconds": 0 if args.bots else max(0, int(deadline - time.monotonic() + 0.999)),
+                "bots": args.demo, "open": lobby_open, "capacity": PLAYER_COUNT}
 
-    print(f"Lobby open for {args.lobby_seconds:g} seconds: {args.socket}", flush=True)
+    print(f"Lobby open for {lobby_seconds:g} seconds: {args.socket}", flush=True)
     print("Join in another terminal: ./launch_game.sh My-name", flush=True)
     print("DEMO: shared UIDs allowed" if args.demo else "CLASS: three distinct player UIDs required", flush=True)
     try:
         while True:
             now = time.monotonic()
-            if lobby_open and (now >= deadline or (args.solo and players)):
+            if lobby_open and (now >= deadline or (args.bots and players)):
                 lobby_open = False
-                if len(players) < PLAYER_COUNT and (not args.bots or not players):
-                    reason = "At least one human must join." if args.bots else "Three players must join."
+                if len(players) < PLAYER_COUNT and (not args.demo or not players):
+                    reason = "At least one human must join." if args.demo else "Three players must join."
                     transport.broadcast({"type": "end", "text": f"Lobby closed: {reason} Restart the server to try again."})
                     print(reason, flush=True)
                     return
@@ -138,12 +137,10 @@ def run(args):
                 # Bots are real client processes using the same socket protocol.
                 for number in range(1, PLAYER_COUNT + 1 - len(players)):
                     name = f"Bot{number}"
-                    token = secrets.token_hex(16)
-                    expected_bots[name] = token
+                    expected_bots.add(name)
                     roster.append(name)
                     command = [sys.executable, "-u", str(Path(__file__).with_name("client.py")), name,
-                               "--socket", args.socket, "--bot", "--token", token,
-                               "--delay", str(args.bot_delay), "--seed", str(rng.randrange(2**32))]
+                               "--socket", args.socket, "--bot"]
                     bot_processes.append(subprocess.Popen(command, stdin=subprocess.DEVNULL,
                                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
                 bot_deadline = now + 5
@@ -187,12 +184,11 @@ def run(args):
             try:
                 if action == "join" and not player:
                     name = message.get("name")
-                    is_fill_bot = (isinstance(name, str) and name in expected_bots
-                                   and message.get("token") == expected_bots[name])
+                    is_fill_bot = isinstance(name, str) and name in expected_bots
                     error = None
                     if not lobby_open and not is_fill_bot:
                         error = "The joining period has ended."
-                    elif args.solo and players and not is_fill_bot:
+                    elif args.bots and players and not is_fill_bot:
                         error = "Solo mode has one human and two bots."
                     elif not valid_name(name):
                         error = "Use 1–20 letters, digits, underscores or hyphens; start with a letter."
@@ -280,18 +276,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--socket", default=communication.default_socket())
     parser.add_argument("--demo", action="store_true", help="allow shared Linux UIDs for testing")
-    parser.add_argument("--bots", action="store_true", help="fill empty seats at lobby close (demo only)")
-    parser.add_argument("--solo", action="store_true", help="start with two bots as soon as the host joins")
-    parser.add_argument("--lobby-seconds", type=float, default=30)
-    parser.add_argument("--bot-delay", type=float, default=0.6)
-    parser.add_argument("--seed", type=int)
+    parser.add_argument("--bots", action="store_true", help="start immediately with two bots (demo only)")
     args = parser.parse_args()
-    if args.solo:
-        args.bots = True
-    if not 0 < args.lobby_seconds <= 3600 or not 0 <= args.bot_delay <= 60:
-        parser.error("Lobby must be 0–3600 seconds (exclusive of zero); bot delay 0–60 seconds.")
     if args.bots and not args.demo:
-        parser.error("Automatic bots share the referee's Linux UID: use --demo --bots for testing.")
+        parser.error("Use --demo --bots for same-account bot testing.")
     if args.socket == communication.default_socket():
         Path(args.socket).parent.mkdir(mode=0o700, exist_ok=True)
     def stop(signum, frame):

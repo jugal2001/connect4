@@ -32,15 +32,12 @@ class IntegrationTests(unittest.TestCase):
         self.log.close()
         self.temp.cleanup()
 
-    def start(self, bots=False, demo=True, seconds=0.6, solo=False):
-        command = [sys.executable, '-u', 'server.py', '--socket', self.path,
-                   '--lobby-seconds', str(seconds), '--bot-delay', '0', '--seed', '42']
-        if demo:
-            command.append('--demo')
-        if bots:
-            command.append('--bots')
-        if solo:
-            command.append('--solo')
+    def start(self, demo=True, seconds=0.6, solo=False):
+        # Shorten the lobby internally; classroom users need no timing flags.
+        code = ("import server; from types import SimpleNamespace; "
+                f"server.run(SimpleNamespace(socket={self.path!r}, demo={demo!r}, "
+                f"bots={solo!r}), lobby_seconds={seconds!r})")
+        command = [sys.executable, '-u', '-c', code]
         self.started = time.monotonic()
         self.server = subprocess.Popen(command, cwd=ROOT, stdout=self.log, stderr=self.log)
         deadline = time.monotonic()+5
@@ -108,12 +105,12 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn('cancelled', self.until(clients['Alice'], 'end')['text'])
 
     def test_one_named_human_two_bot_processes_complete(self):
-        self.start(bots=True)
+        self.start()
         human = self.join('Tester')
         state = self.until(human, 'state')
         self.assertEqual(set(state['symbols']), {'Tester','Bot1','Bot2'})
         rng = random.Random(3)
-        deadline = time.monotonic()+10
+        deadline = time.monotonic()+30
         while not state['winner'] and not state['draw']:
             self.assertLess(time.monotonic(), deadline)
             if state['turn'] == 'Tester':
@@ -135,7 +132,7 @@ class IntegrationTests(unittest.TestCase):
         self.until(late, 'disconnected')
 
     def test_two_humans_fill_only_one_bot_and_reject_late_join(self):
-        self.start(bots=True)
+        self.start()
         a, b = self.join('Alice'), self.join('Bob')
         state = self.until(a, 'state')
         self.until(b, 'state')
@@ -145,14 +142,8 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn('running', self.until(late, 'error')['text'])
         self.until(late, 'disconnected')
 
-    def test_underfilled_human_lobby_cancels(self):
-        self.start()
-        a = self.join('Alice')
-        self.assertIn('Three players', self.until(a, 'end')['text'])
-        self.assertEqual(self.server.wait(timeout=5), 0)
-
     def test_no_humans_does_not_launch_bots(self):
-        self.start(bots=True, seconds=0.2)
+        self.start(seconds=0.2)
         self.assertEqual(self.server.wait(timeout=5), 0)
         self.log.seek(0)
         self.assertIn('At least one human', self.log.read())
