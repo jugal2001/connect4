@@ -33,7 +33,8 @@ There is **one play script** for hosting, joining, and bot mode.
 This opens one tmux window with three side-by-side panes named Player1,
 Player2, and Player3. Each runs an independent human client. All three join
 automatically, and the game starts after the 30-second lobby. Use a wide terminal.
-Press **Ctrl-B**, release, then an **arrow key** to switch panes. Press
+Click a pane to select its player, or press **Ctrl-B**, release, then an
+**arrow key** to switch panes. Press
 **Ctrl-B**, then **Z** to zoom the current pane or restore the three-pane view.
 Type `quit` in any player pane to end the match and close the game session.
 Outside tmux, detaching with **Ctrl-B**, then **D** also stops this game.

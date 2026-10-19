@@ -59,6 +59,7 @@ if ! $ready; then cat "$log" >&2; exit 1; fi
 if [[ ${1:-} == --windows ]]; then
     session="connect4-$$"
     first_pane=$(tmux new-session -d -P -F '#{pane_id}' -s "$session" -n Players -c "$PWD" "python3 -u client.py Player1; tmux kill-session -t $session")
+    tmux set-option -t "$session" mouse on
     tmux split-window -t "$session:Players" -c "$PWD" "python3 -u client.py Player2; tmux kill-session -t $session"
     tmux split-window -t "$session:Players" -c "$PWD" "python3 -u client.py Player3; tmux kill-session -t $session"
     tmux select-layout -t "$session:Players" even-horizontal >/dev/null
