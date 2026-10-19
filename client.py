@@ -9,28 +9,26 @@ import time
 
 import communication
 
-HELP = """drop 4                 Drop in column 4 (a bare number also works).
-pop 4                  Remove YOUR bottom disc in column 4; once per game.
+HELP = """drop 4                 Drop your team's disc (a bare number also works).
+pop 4                  Remove your team's bottom disc; one token per player.
 say MESSAGE            Talk to everyone.
-/w player2 MESSAGE     Whisper / offer a deal to one player.
-alliance player2       Invite someone to a private alliance.
-alliance accept player1  Accept their latest invitation to you.
-alliance say MESSAGE   Talk only to your alliance partner.
-alliance leave         Leave and cancel your pending invitations.
-alliance               Show your current partner.
-look / help / quit     Redisplay board / commands / exit.
-Alliances are for chat; only one player can win. Promises are not enforced.
+/w Alice MESSAGE       Whisper to a player by name.
+team MESSAGE           Talk only to your randomly assigned teammate.
+look / help / quit     Redisplay board or lobby / commands / exit.
+Both teammates win together. Turns alternate between teams.
 """
 
 
 def show_board(state, player):
-    symbols = {"player1": "X", "player2": "O", "player3": "@"}
+    symbols = state["symbols"]
     print("\n    1 2 3 4 5 6 7")
     for row in state["board"]:
         print("  | " + " ".join(row) + " |")
     print("  +---------------+")
-    print(f"player1=X  player2=O  player3=@ | You: {player} ({symbols[player]})")
-    print("Pop tokens: " + "  ".join(f"{symbols[p]}={tokens}" for p, tokens in state["pops"].items()))
+    for symbol, members in state["teams"].items():
+        print(f"Team {symbol}: {' + '.join(members)}")
+    print(f"You: {player} ({symbols[player]}) | Order: {' -> '.join(state['order'])}")
+    print("Pop tokens: " + "  ".join(f"{p}={tokens}" for p, tokens in state["pops"].items()))
     if not state["winner"] and not state["draw"]:
         if state["turn"] == player:
             print("YOUR TURN — drop <1-7>, or pop <1-7> using your token:", flush=True)
@@ -48,30 +46,19 @@ def parse_command(line, move):
         command, text = "drop", command
     if command in ("drop", "pop"):
         if move is None:
-            raise ValueError("Wait for three players to join.")
+            raise ValueError("Wait for the lobby to close and teams to be assigned.")
         try:
             column = int(text)
         except ValueError:
             raise ValueError(f"Use {command} followed by a column number, such as {command} 4.") from None
         return {"type": command, "column": column, "move": move}
-    if command == "say":
-        return {"type": "chat", "channel": "all", "text": text}
+    if command in ("say", "team"):
+        return {"type": "chat", "channel": "all" if command == "say" else "team", "text": text}
     if command == "/w":
         target, separator, body = text.partition(" ")
         if not separator:
-            raise ValueError("Use: /w player2 your message")
+            raise ValueError("Use: /w Alice your message")
         return {"type": "chat", "channel": "private", "target": target, "text": body}
-    if command == "alliance":
-        operation, _, body = text.partition(" ")
-        if operation == "say":
-            return {"type": "chat", "channel": "alliance", "text": body}
-        if operation == "accept":
-            return {"type": "alliance", "operation": "accept", "target": body.strip()}
-        if operation == "leave":
-            return {"type": "alliance", "operation": "leave"}
-        if not operation:
-            return {"type": "alliance", "operation": "status"}
-        return {"type": "alliance", "operation": "invite", "target": text}
     if command == "look":
         return {"type": "look"}
     raise ValueError("Unknown command. Type help.")
@@ -79,7 +66,7 @@ def parse_command(line, move):
 
 def choose_bot_move(state, player, rng):
     """Usually drop; use a legal pop on about one quarter of eligible turns."""
-    symbol = {"player1": "X", "player2": "O", "player3": "@"}[player]
+    symbol = state["symbols"][player]
     pops = [i + 1 for i, cell in enumerate(state["board"][-1])
             if cell == symbol and state["pops"][player]]
     if pops and rng.random() < 0.25:
@@ -108,11 +95,11 @@ def run(args):
             if line.strip().lower() == "quit":
                 return
 
-    print(f"CONNECT-4 MAYHEM — {args.player}" + (" [random bot]" if args.bot else ""), flush=True)
+    print(f"CONNECT-4 MAYHEM — {args.name}" + (" [random bot]" if args.bot else ""), flush=True)
     if not args.bot:
         print(HELP, flush=True)
         threading.Thread(target=keyboard, daemon=True).start()
-    client.send({"type": "join", "player": args.player})
+    client.send({"type": "join", "name": args.name, "token": args.token})
     try:
         while True:
             message = client.receive(timeout=0.05)
@@ -123,13 +110,18 @@ def run(args):
                         bot_due = time.monotonic() + args.delay
                     state = message
                     input_state[:] = [state["move"], state["turn"]]
-                    show_board(state, args.player)
+                    show_board(state, args.name)
+                elif kind == "lobby":
+                    names = ', '.join(message['names']) or '(empty)'
+                    print(f"Lobby: {names} ({len(message['names'])}/4); "
+                          f"{message['seconds']}s left. "
+                          + ("Bots will fill empty seats." if message['bots'] else "Four humans required."), flush=True)
                 elif kind == "chat":
                     print(f"[{message['channel']}] {message['sender']}: {message['text']}", flush=True)
                     if args.bot and message["channel"] == "private" and message["sender"] not in bot_replied:
                         bot_replied.add(message["sender"])
                         client.send({"type": "chat", "channel": "private", "target": message["sender"],
-                                     "text": "I'm a random bot. I accept alliances, but my drops and pops stay random!"})
+                                     "text": "I'm a random bot. My drops and pops are random; team chat does not control me!"})
                 elif kind == "disconnected":
                     print("Disconnected from referee.")
                     return
@@ -137,17 +129,12 @@ def run(args):
                     print(message.get("text", ""), flush=True)
                     if kind == "end":
                         return
-                    if args.bot and kind == "offer":
-                        client.send({"type": "alliance", "operation": "accept", "target": message["sender"]})
-                    if args.bot and kind == "allied":
-                        client.send({"type": "chat", "channel": "alliance",
-                                     "text": "Deal! I'm still choosing random columns."})
 
             if args.bot:
                 if (state and not state["winner"] and not state["draw"]
-                        and state["turn"] == args.player and state["move"] != bot_move_sent
+                        and state["turn"] == args.name and state["move"] != bot_move_sent
                         and time.monotonic() >= bot_due):
-                    client.send(choose_bot_move(state, args.player, rng))
+                    client.send(choose_bot_move(state, args.name, rng))
                     bot_move_sent = state["move"]
                 continue
             try:
@@ -162,7 +149,7 @@ def run(args):
             try:
                 outgoing = parse_command(line, move)
                 if outgoing:
-                    if outgoing["type"] in ("drop", "pop") and turn != args.player:
+                    if outgoing["type"] in ("drop", "pop") and turn != args.name:
                         raise ValueError("Wait for YOUR TURN before dropping or popping. You can still chat.")
                     client.send(outgoing)
             except ValueError as error:
@@ -173,8 +160,9 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--socket", required=True)
-    parser.add_argument("--player", choices=("player1", "player2", "player3"), required=True)
+    parser.add_argument("name", help="display name, e.g. Alice (not a Linux account login)")
+    parser.add_argument("--socket", default=communication.default_socket())
+    parser.add_argument("--token", help=argparse.SUPPRESS)
     parser.add_argument("--bot", action="store_true", help="choose random legal columns without keyboard input")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--delay", type=float, default=0.6, help="seconds before each bot move")

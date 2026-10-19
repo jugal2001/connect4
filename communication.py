@@ -12,6 +12,11 @@ import socket
 import struct
 import threading
 
+def default_socket():
+    """Predictable per-user demo address shared by the launcher and named clients."""
+    return f"/tmp/connect4-mayhem-{os.getuid()}/game.sock"
+
+
 MAX_MESSAGE = 8192
 
 
