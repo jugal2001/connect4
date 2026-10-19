@@ -51,8 +51,10 @@ if missing; it additionally creates the classroom accounts and installs the game
 
 You join as **Host**. Two independent bot processes fill the other seats
 immediately; no second terminal or joining delay is needed. When the display
-says **YOUR TURN**, type `drop 4`, or simply `4`. Bots make random legal drops
-and occasionally use a legal pop. Bots do not respond to chat.
+says **YOUR TURN**, type `drop 4`, or simply `4`. Bots take immediate wins, usually block immediate threats, and prefer central
+columns. They evaluate legal Pops too. They occasionally choose a random move
+(20% of turns without an immediate win) and do not search several turns ahead,
+so they remain beatable. Bots do not respond to chat.
 
 ### Play with classmates
 

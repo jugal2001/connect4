@@ -119,10 +119,37 @@ class GameTests(unittest.TestCase):
         game.board[5][:2] = ['X', 'O']
         rng = random.Random(42)
         moves = [choose_bot_move(game.state(), player, rng) for _ in range(100)]
-        self.assertEqual({m['type'] for m in moves}, {'drop', 'pop'})
+        self.assertTrue(all(m['type'] in ('drop', 'pop') for m in moves))
         self.assertTrue(all(m['column'] == 1 for m in moves if m['type'] == 'pop'))
         game.pops[player] = 0
         self.assertTrue(all(choose_bot_move(game.state(), player, rng)['type'] == 'drop' for _ in range(100)))
+
+    def test_bot_takes_win_and_leaves_state_unchanged(self):
+        from copy import deepcopy
+        game = self.game
+        game.board[5] = list('XXX.OO.')
+        state = deepcopy(game.state())
+        move = choose_bot_move(state, game.order[0], random.Random(42))
+        self.assertEqual((move['type'], move['column']), ('drop', 4))
+        self.assertEqual(state, game.state())
+
+    def test_bot_usually_blocks_but_can_overlook_threat(self):
+        game = self.game
+        game.board[5] = list('OOO.X.@')
+        player = game.order[0]
+        move = choose_bot_move(game.state(), player, random.Random(42))
+        self.assertEqual((move['type'], move['column']), ('drop', 4))
+        choices = [choose_bot_move(game.state(), player, random.Random(seed))
+                   for seed in range(20)]
+        self.assertTrue(any(move['column'] != 4 for move in choices))
+
+    def test_bot_finds_winning_pop(self):
+        game = self.game
+        game.board[5] = list('OXOX...')
+        game.board[4] = list('XXXO...')
+        game.board[3] = list('...X...')
+        move = choose_bot_move(game.state(), game.order[0], random.Random(42))
+        self.assertEqual((move['type'], move['column']), ('pop', 4))
 
     def test_names_and_commands(self):
         for name in ['Alice', 'My-name', 'John_2']:

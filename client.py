@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""A scrolling text client, or a random bot when started with --bot."""
+"""A scrolling text client, or a casual bot when started with --bot."""
 
 import argparse
+from copy import deepcopy
 import queue
 import random
 import threading
 import time
 
 import communication
+from server import Game
 
 HELP = """drop 4                 Drop your own disc (a bare number also works).
 pop 4                  Remove your own bottom disc; one token per player.
@@ -62,15 +64,65 @@ def parse_command(line, move):
     raise ValueError("Unknown command. Type help.")
 
 
+def bot_moves(game, player):
+    """List legal drops and pops for one player."""
+    moves = [("drop", col + 1) for col, cell in enumerate(game.board[0]) if cell == "."]
+    if game.pops[player]:
+        moves += [("pop", col + 1) for col, cell in enumerate(game.board[-1])
+                  if cell == game.symbols[player]]
+    return moves
+
+
+def try_bot_move(game, player, action):
+    """Use the real game rules on a copy, leaving the live board untouched."""
+    trial = deepcopy(game)
+    trial.turn = trial.order.index(player)
+    command, column = action
+    getattr(trial, command)(player, column)
+    return trial
+
+
 def choose_bot_move(state, player, rng):
-    """Usually drop; use a legal pop on about one quarter of eligible turns."""
-    symbol = state["symbols"][player]
-    pops = [i + 1 for i, cell in enumerate(state["board"][-1])
-            if cell == symbol and state["pops"][player]]
-    if pops and rng.random() < 0.25:
-        return {"type": "pop", "column": rng.choice(pops), "move": state["move"]}
-    drops = [i + 1 for i, cell in enumerate(state["board"][0]) if cell == "."]
-    return {"type": "drop", "column": rng.choice(drops), "move": state["move"]}
+    """Casual bot: win, usually block, otherwise prefer central columns."""
+    game = Game(state["order"], random.Random(0))
+    game.order = list(state["order"])
+    game.symbols = dict(state["symbols"])
+    game.board = deepcopy(state["board"])
+    game.pops = dict(state["pops"])
+    moves = bot_moves(game, player)
+    outcomes = [(action, try_bot_move(game, player, action)) for action in moves]
+
+    winning = [action for action, trial in outcomes if trial.winner == player]
+    if winning:
+        chosen = rng.choice(winning)
+    else:
+        # Occasionally overlook a threat. No deep search or perfect play.
+        playable = [(action, trial) for action, trial in outcomes
+                    if not trial.winner]  # don't deliberately Pop an opponent into a win
+        if not playable:
+            playable = outcomes
+        if rng.random() < 0.2:
+            chosen = rng.choice(playable)[0]
+        else:
+            scored = []
+            for action, trial in playable:
+                score = 0
+                if trial.winner:
+                    score = -10000
+                elif not trial.draw:
+                    # Check either opponent's immediate threats, including Pops.
+                    for opponent in game.order:
+                        if opponent != player:
+                            threats = sum(try_bot_move(trial, opponent, reply).winner == opponent
+                                          for reply in bot_moves(trial, opponent))
+                            score -= 100 * threats
+                    score += 3 - abs(4 - action[1])  # central discs offer more lines
+                    score += trial.pops[player]    # save Pop when otherwise tied
+                scored.append((score, action))
+            best = max(score for score, action in scored)
+            chosen = rng.choice([action for score, action in scored if score == best])
+    command, column = chosen
+    return {"type": command, "column": column, "move": state["move"]}
 
 
 def run(args):
@@ -91,7 +143,7 @@ def run(args):
             if line.strip().lower() == "quit":
                 return
 
-    print(f"CONNECT-4 MAYHEM — {args.name}" + (" [random bot]" if args.bot else ""), flush=True)
+    print(f"CONNECT-4 MAYHEM — {args.name}" + (" [casual bot]" if args.bot else ""), flush=True)
     if not args.bot:
         print(HELP, flush=True)
         threading.Thread(target=keyboard, daemon=True).start()
@@ -152,7 +204,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("name", help="display name, e.g. Alice (not a Linux account login)")
     parser.add_argument("--socket", default=communication.default_socket())
-    parser.add_argument("--bot", action="store_true", help="choose random legal columns without keyboard input")
+    parser.add_argument("--bot", action="store_true", help="play automatically with a casual strategy")
     args = parser.parse_args()
     try:
         run(args)
