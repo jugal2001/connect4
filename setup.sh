@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Optional classroom installation; the default demo needs no setup or sudo.
+# Install dependencies and separate Linux accounts for multiplayer games.
 set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 [[ $EUID == 0 ]] || { echo 'Run: sudo ./setup.sh' >&2; exit 1; }
@@ -28,4 +28,8 @@ done
 install -m 755 "$project_dir/launch_game.sh" /opt/connect4-mayhem/launch_game.sh
 # Remove the obsolete play entry point when upgrading an older installation.
 rm -f /opt/connect4-mayhem/join_game.sh
-echo 'Installed. See README.md for separate-Linux-user server and client commands.'
+echo 'Installed. In three terminals, run:'
+echo '  sudo ./launch_game.sh --player 1   # starts the referee and Player1'
+echo '  sudo ./launch_game.sh --player 2   # joins as Player2'
+echo '  sudo ./launch_game.sh --player 3   # joins as Player3'
+echo 'Start Player1 first, then join the others within 30 seconds.'

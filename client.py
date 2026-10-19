@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A scrolling text client, or a casual bot when started with --bot."""
+"""A scrolling text client, or a tactical bot when started with --bot."""
 
 import argparse
 from copy import deepcopy
@@ -82,8 +82,45 @@ def try_bot_move(game, player, action):
     return trial
 
 
+def line_score(game, player):
+    """Value usable four-cell lines, not a column's distance from the center.
+
+    Mixed-symbol lines cannot win without a Pop, so don't reward building them.
+    Empty squares with space underneath need more setup than playable squares.
+    """
+    board = game.board
+    symbol = game.symbols[player]
+    rows, cols = len(board), len(board[0])
+    score = 0.0
+    for row in range(rows):
+        for col in range(cols):
+            for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
+                if not (0 <= row + 3 * dr < rows and 0 <= col + 3 * dc < cols):
+                    continue
+                cells = [(row + i * dr, col + i * dc) for i in range(4)]
+                values = [board[r][c] for r, c in cells]
+                count = values.count(symbol)
+                if not count or any(value not in (symbol, ".") for value in values):
+                    continue
+                support = sum(board[below][c] == "."
+                              for r, c in cells if board[r][c] == "."
+                              for below in range(r + 1, rows))
+                score += (0, 1, 12, 80, 10000)[count] / (1 + support)
+    return score
+
+
+def winning_moves(game, player):
+    return sum(try_bot_move(game, player, action).winner == player
+               for action in bot_moves(game, player))
+
+
 def choose_bot_move(state, player, rng):
-    """Casual bot: win, usually block, otherwise prefer central columns."""
+    """Take wins, avoid immediate losses, then build threats and usable lines.
+
+    Threat checks include Pops and the support a drop gives an enemy's diagonal
+    or horizontal line. This is a one-move tactical evaluation, not a full search.
+    Randomness only breaks ties between equally scored actions.
+    """
     game = Game(state["order"], random.Random(0))
     game.order = list(state["order"])
     game.symbols = dict(state["symbols"])
@@ -96,31 +133,29 @@ def choose_bot_move(state, player, rng):
     if winning:
         chosen = rng.choice(winning)
     else:
-        # Occasionally overlook a threat. No deep search or perfect play.
-        playable = [(action, trial) for action, trial in outcomes
-                    if not trial.winner]  # don't deliberately Pop an opponent into a win
-        if not playable:
-            playable = outcomes
-        if rng.random() < 0.2:
-            chosen = rng.choice(playable)[0]
-        else:
-            scored = []
-            for action, trial in playable:
-                score = 0
-                if trial.winner:
-                    score = -10000
-                elif not trial.draw:
-                    # Check either opponent's immediate threats, including Pops.
-                    for opponent in game.order:
-                        if opponent != player:
-                            threats = sum(try_bot_move(trial, opponent, reply).winner == opponent
-                                          for reply in bot_moves(trial, opponent))
-                            score -= 100 * threats
-                    score += 3 - abs(4 - action[1])  # central discs offer more lines
-                    score += trial.pops[player]    # save Pop when otherwise tied
-                scored.append((score, action))
-            best = max(score for score, action in scored)
-            chosen = rng.choice([action for score, action in scored if score == best])
+        index = game.order.index(player)
+        opponents = [game.order[(index + offset) % len(game.order)]
+                     for offset in range(1, len(game.order))]
+        scored = []
+        for action, trial in outcomes:
+            if trial.winner:
+                score = (-2, 0, 0, 0)
+            elif trial.draw:
+                score = (0, 0, 0, 0)
+            else:
+                threats = [winning_moves(trial, opponent) for opponent in opponents]
+                attack = winning_moves(trial, player)
+                position = line_score(trial, player)
+                position -= 0.6 * sum(line_score(trial, opponent) for opponent in opponents)
+                position += 100 * attack + 150 * max(0, attack - 1)
+                position += 2 * trial.pops[player]
+                # Safety outranks positional gains. If all threats cannot be
+                # stopped, prioritize the opponent who actually moves next.
+                score = (1 if not any(threats) else -1,
+                         -threats[0], -sum(threats), position)
+            scored.append((score, action))
+        best = max(score for score, action in scored)
+        chosen = rng.choice([action for score, action in scored if score == best])
     command, column = chosen
     return {"type": command, "column": column, "move": state["move"]}
 
@@ -143,7 +178,7 @@ def run(args):
             if line.strip().lower() == "quit":
                 return
 
-    print(f"CONNECT-4 MAYHEM — {args.name}" + (" [casual bot]" if args.bot else ""), flush=True)
+    print(f"CONNECT-4 MAYHEM — {args.name}" + (" [tactical bot]" if args.bot else ""), flush=True)
     if not args.bot:
         print(HELP, flush=True)
         threading.Thread(target=keyboard, daemon=True).start()
@@ -204,7 +239,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("name", help="display name, e.g. Alice (not a Linux account login)")
     parser.add_argument("--socket", default=communication.default_socket())
-    parser.add_argument("--bot", action="store_true", help="play automatically with a casual strategy")
+    parser.add_argument("--bot", action="store_true", help="play automatically with a tactical strategy")
     args = parser.parse_args()
     try:
         run(args)

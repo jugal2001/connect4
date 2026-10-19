@@ -122,7 +122,7 @@ def run(args, lobby_seconds=30):
 
     print(f"Lobby open for {lobby_seconds:g} seconds: {args.socket}", flush=True)
     print("Join in another terminal: ./launch_game.sh My-name", flush=True)
-    print("DEMO: shared UIDs allowed" if args.demo else "CLASS: three distinct player UIDs required", flush=True)
+    print("Shared-account mode" if args.demo else "Separate-account mode: three distinct player UIDs required", flush=True)
     try:
         while True:
             now = time.monotonic()

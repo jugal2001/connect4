@@ -133,7 +133,7 @@ class GameTests(unittest.TestCase):
         self.assertEqual((move['type'], move['column']), ('drop', 4))
         self.assertEqual(state, game.state())
 
-    def test_bot_usually_blocks_but_can_overlook_threat(self):
+    def test_bot_reliably_blocks_for_every_seed(self):
         game = self.game
         game.board[5] = list('OOO.X.@')
         player = game.order[0]
@@ -141,7 +141,46 @@ class GameTests(unittest.TestCase):
         self.assertEqual((move['type'], move['column']), ('drop', 4))
         choices = [choose_bot_move(game.state(), player, random.Random(seed))
                    for seed in range(20)]
-        self.assertTrue(any(move['column'] != 4 for move in choices))
+        self.assertTrue(all((move['type'], move['column']) == ('drop', 4)
+                            for move in choices))
+
+    def test_bot_extends_own_pair_away_from_center(self):
+        game = self.game
+        game.board[5] = list('X...O.@')
+        game.board[4][0] = 'X'
+        move = choose_bot_move(game.state(), game.order[0], random.Random(42))
+        self.assertEqual((move['type'], move['column']), ('drop', 1))
+
+    def test_bot_builds_two_horizontal_winning_threats(self):
+        game = self.game
+        game.board[5] = list('..XX..O')
+        move = choose_bot_move(game.state(), game.order[0], random.Random(42))
+        self.assertEqual(move['type'], 'drop')
+        self.assertIn(move['column'], (2, 5))
+
+    def test_bot_stops_stacking_mixed_center_column(self):
+        game = self.game
+        for _ in range(3):
+            game.drop(game.order[game.turn], 4)
+        for seed in range(10):
+            move = choose_bot_move(game.state(), game.order[0], random.Random(seed))
+            self.assertEqual(move['type'], 'drop')
+            self.assertNotEqual(move['column'], 4)
+
+    def test_bot_does_not_support_enemy_winning_square(self):
+        game = self.game
+        game.board[5] = list('X@X....')
+        game.board[4] = list('OOO....')
+        move = choose_bot_move(game.state(), game.order[0], random.Random(42))
+        self.assertNotEqual((move['type'], move['column']), ('drop', 4))
+
+    def test_bot_blocks_next_player_when_two_opponents_threaten(self):
+        game = self.game
+        for row in (3, 4, 5):
+            game.board[row][0] = 'O'
+            game.board[row][6] = '@'
+        move = choose_bot_move(game.state(), game.order[0], random.Random(42))
+        self.assertEqual((move['type'], move['column']), ('drop', 1))
 
     def test_bot_finds_winning_pop(self):
         game = self.game
