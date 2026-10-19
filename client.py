@@ -9,13 +9,12 @@ import time
 
 import communication
 
-HELP = """drop 4                 Drop your team's disc (a bare number also works).
-pop 4                  Remove your team's bottom disc; one token per player.
+HELP = """drop 4                 Drop your own disc (a bare number also works).
+pop 4                  Remove your own bottom disc; one token per player.
 say MESSAGE            Talk to everyone.
 /w Alice MESSAGE       Whisper to a player by name.
-team MESSAGE           Talk only to your randomly assigned teammate.
 look / help / quit     Redisplay board or lobby / commands / exit.
-Both teammates win together. Turns alternate between teams.
+Each player has a unique symbol. Connect four of your own discs to win.
 """
 
 
@@ -25,8 +24,7 @@ def show_board(state, player):
     for row in state["board"]:
         print("  | " + " ".join(row) + " |")
     print("  +---------------+")
-    for symbol, members in state["teams"].items():
-        print(f"Team {symbol}: {' + '.join(members)}")
+    print("Players: " + "  ".join(f"{name}={symbol}" for name, symbol in symbols.items()))
     print(f"You: {player} ({symbols[player]}) | Order: {' -> '.join(state['order'])}")
     print("Pop tokens: " + "  ".join(f"{p}={tokens}" for p, tokens in state["pops"].items()))
     if not state["winner"] and not state["draw"]:
@@ -46,14 +44,14 @@ def parse_command(line, move):
         command, text = "drop", command
     if command in ("drop", "pop"):
         if move is None:
-            raise ValueError("Wait for the lobby to close and teams to be assigned.")
+            raise ValueError("Wait for the lobby to close and the game to start.")
         try:
             column = int(text)
         except ValueError:
             raise ValueError(f"Use {command} followed by a column number, such as {command} 4.") from None
         return {"type": command, "column": column, "move": move}
-    if command in ("say", "team"):
-        return {"type": "chat", "channel": "all" if command == "say" else "team", "text": text}
+    if command == "say":
+        return {"type": "chat", "channel": "all", "text": text}
     if command == "/w":
         target, separator, body = text.partition(" ")
         if not separator:
@@ -113,15 +111,15 @@ def run(args):
                     show_board(state, args.name)
                 elif kind == "lobby":
                     names = ', '.join(message['names']) or '(empty)'
-                    print(f"Lobby: {names} ({len(message['names'])}/4); "
+                    print(f"Lobby: {names} ({len(message['names'])}/{message['capacity']}); "
                           f"{message['seconds']}s left. "
-                          + ("Bots will fill empty seats." if message['bots'] else "Four humans required."), flush=True)
+                          + ("Bots will fill empty seats." if message['bots'] else "Three humans required."), flush=True)
                 elif kind == "chat":
                     print(f"[{message['channel']}] {message['sender']}: {message['text']}", flush=True)
                     if args.bot and message["channel"] == "private" and message["sender"] not in bot_replied:
                         bot_replied.add(message["sender"])
                         client.send({"type": "chat", "channel": "private", "target": message["sender"],
-                                     "text": "I'm a random bot. My drops and pops are random; team chat does not control me!"})
+                                     "text": "I'm a random bot. My drops and pops are random; chat does not control me!"})
                 elif kind == "disconnected":
                     print("Disconnected from referee.")
                     return

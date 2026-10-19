@@ -14,7 +14,7 @@ if ! command -v python3 >/dev/null; then
     fi
 fi
 getent group connect4 >/dev/null || groupadd --system connect4
-for account in c4-referee c4-player1 c4-player2 c4-player3 c4-player4; do
+for account in c4-referee c4-player1 c4-player2 c4-player3; do
     if id "$account" >/dev/null 2>&1; then
         [[ $(id -gn "$account") == connect4 ]] || { echo "Existing $account is not a game account." >&2; exit 1; }
     else

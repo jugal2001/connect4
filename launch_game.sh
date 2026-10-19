@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One play script: host, join by name, or play immediately against three bots.
+# One play script: host, join by name, or play immediately against two bots.
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 command -v python3 >/dev/null || { echo 'Install Python: sudo apt install python3' >&2; exit 1; }
@@ -7,7 +7,7 @@ if (( $# > 1 )); then echo 'Usage: ./launch_game.sh [NAME | --bots]' >&2; exit 1
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
     echo './launch_game.sh         Host as Host; wait 30s, then fill empty seats with bots.'
     echo './launch_game.sh Alice   Join the running lobby as Alice.'
-    echo './launch_game.sh --bots  Play as Host against three bots immediately.'
+    echo './launch_game.sh --bots  Play as Host against two bots immediately.'
     exit 0
 fi
 socket=$(python3 -c 'import communication; print(communication.default_socket())')
@@ -32,7 +32,7 @@ trap 'exit 143' TERM
 options=(--demo --bots)
 if [[ ${1:-} == --bots ]]; then
     options+=(--solo)
-    echo 'You are Host. Starting with three bots.'
+    echo 'You are Host. Starting with two bots.'
 else
     echo 'You are Host. Others have 30 seconds to join: ./launch_game.sh THEIR-NAME'
     echo 'Any empty seats will become bots when the timer expires.'

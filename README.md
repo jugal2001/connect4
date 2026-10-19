@@ -1,142 +1,146 @@
-# Connect-4 Mayhem — random 2v2
+# Connect-4 Mayhem — three players, no teams
 
-Four players, two randomly assigned teams, one public 7×6 board. Teammates
-share a disc symbol and a victory. Each player also has one **pop token**.
-There are no alliance invitations or individual victories.
+A small Linux terminal game for **three individual players** on a 7×6 board.
+Each player has a distinct symbol (`X`, `O`, or `@`) and one **Pop token**.
+Connect four of your own discs to win. There are no teams, alliances, or shared
+victories. The referee randomly selects the initial turn order.
 
-Only Linux and Python 3.8+ are needed. The game uses Python's standard library;
-no pip packages or tmux are required. **All socket communication lives in
-[`communication.py`](communication.py).**
+Only Linux and Python 3.8+ are needed. No pip packages, tmux, or graphics
+framework. **All socket communication is in [`communication.py`](communication.py).**
 
-## One script to host, join, or play with bots
-
-Extract the archive and enter the folder:
+## Download and play
 
 ```bash
 tar -xzf connect4-mayhem.tgz
 cd connect4-mayhem
 ```
 
-Only Python is needed (`sudo apt install python3` on Ubuntu/Debian).
+If Python is missing on Ubuntu/Debian:
 
-**Play immediately against three bots:**
+```bash
+sudo apt update
+sudo apt install -y python3
+```
+
+There is **one play script** for hosting, joining, and bot mode.
+
+### Play alone against two bots
 
 ```bash
 ./launch_game.sh --bots
 ```
 
-You automatically join as **Host**. Three separate bot processes fill the
-other seats immediately; there is no 30-second wait and no second terminal
-needed. Teams are random, so one bot is your teammate and two are opponents.
+You join as **Host**. Two independent bot processes fill the other seats
+immediately; no second terminal or joining delay is needed. When the display
+says **YOUR TURN**, type `drop 4`, or simply `4`. Bots make random legal drops
+and occasionally use a legal pop; they don't understand strategic suggestions.
 
-**Host a game for friends:**
+### Play with classmates
+
+The host runs:
 
 ```bash
 ./launch_game.sh
 ```
 
-You automatically join as **Host** in that terminal. The game waits 30 seconds
-for up to three other people. They join from their own terminals using the
-**same script**, with their name:
+The host automatically joins as **Host**. Two other players have 30 seconds to
+join from their own terminals using the same script:
 
 ```bash
 ./launch_game.sh Alice
 ./launch_game.sh Bob
-./launch_game.sh Cara
 ```
 
-When the timer expires, all empty seats become bots: Host alone gets three
-bots; Host plus Alice gets two; three humans get one; four humans get none.
-The game waits the full joining period even if all four seats fill early.
-Late joins, a fifth player, and duplicate names are rejected. You cannot
-replace a bot or reconnect after the game begins.
+When the timer expires, empty seats become bots:
 
-Names use 1–20 letters, digits, underscores or hyphens, starting with a letter.
-Names are unique ignoring case. `Host` is already taken by the host; names
-beginning with `Bot` are reserved for automatic bots. Names are game nicknames,
-not Linux account logins or passwords.
+| Humans who joined, including Host | Bots added |
+| --- | --- |
+| 1 | 2 |
+| 2 | 1 |
+| 3 | 0 |
 
-Type `drop 4` (or just `4`) when the board says **YOUR TURN**. `pop 4` spends
-your personal pop token. `team MESSAGE` talks privately to your teammate.
-Bots choose random legal moves, including occasional pops; they don't follow
-instructions sent through chat.
+The normal lobby waits the full 30 seconds even if all seats fill early. A
+fourth player, duplicate name, or late join is rejected. No mid-match joining
+or reconnection. Run `./launch_game.sh --help` for the command reminder.
 
-Run `./launch_game.sh --help` for a short command reminder. There is no separate
-joining script. The host's launcher starts the referee in the background,
-shows the host's client in the foreground, and cleans up the referee and bots
-when the match finishes or the host exits. `quit` or Ctrl-C leaves the game.
-Leaving any client cancels the match for everyone. A guest's launcher never
-owns or stops the referee directly. Start the launcher again for a new game.
+Names use 1–20 letters, digits, underscores or hyphens and start with a letter.
+They are unique ignoring case. `Host` is taken by the host; names starting
+with `Bot` are reserved. Names are display nicknames, not Linux credentials.
 
-The single-script demo uses your current Linux account for all processes.
-Use the same Linux account in the other terminals to reach its private socket,
-`/tmp/connect4-mayhem-<UID>/game.sock`. See classroom mode below to use distinct
-Linux users. The launcher refuses to overwrite an existing game socket. After
-a forced kill (SIGKILL), a stale socket may need removing once you have verified
-that its old referee is gone.
+The simple launcher uses your current Linux account for all processes. Use
+that same account in the other demo terminals. The socket is
+`/tmp/connect4-mayhem-<UID>/game.sock`. See classroom mode below for genuinely
+different Linux users, as required by the assignment.
 
-For advanced testing, the underlying Python entry points remain available:
+The launcher starts a referee in the background and the host's client in the
+foreground. It cleans up the referee and bots when the host exits or the match
+finishes. `quit` or Ctrl-C leaves; any player's disconnection cancels the match
+for everyone. A guest's launcher does not directly own or stop the referee.
+Start the launcher again for a fresh match. An existing socket is never
+silently replaced. After SIGKILL, remove a stale socket only after confirming
+that its referee is no longer running.
+
+Advanced Python entry points are also available:
 
 ```bash
-# Referee only; you must separately join a named client:
+# Referee only, for a short repeatable test:
 python3 server.py --demo --bots --lobby-seconds 5 --seed 42
-# Another terminal:
+# Join from another terminal:
 python3 client.py Alice
 ```
 
-These server flags are deliberately not part of the simple launcher. The seed
-controls team assignment and bot seeds; reproducing a match also requires the
-same joining order and player actions. For parallel games use `--socket PATH`
-on both Python commands, with an existing socket parent directory.
+The seed controls turn order and bot seeds; reproducing a game also requires
+the same joining order and actions. Use `--socket PATH` on both Python commands
+for parallel matches; the custom socket's parent directory must already exist.
+Those advanced flags are deliberately not part of the simple launcher.
 
 ## Rules
 
-1. After the lobby closes, the referee shuffles the four players into teams
-   **X** and **O**, with exactly two players on each team.
-2. Turns alternate **X teammate 1 → O teammate 1 → X teammate 2 → O teammate 2**.
-   Everyone gets their own turn; teammates cannot move on each other's behalf.
-3. `drop 4` drops your team's disc into the lowest empty square in column 4.
-   Both teammates' discs combine into the same winning lines.
-4. Four or more Xs or Os in a horizontal, vertical, or diagonal line wins for
-   **both members of that team**, regardless of who placed the last disc.
-5. Each player has one personal pop token. `pop 4` removes the bottom disc of
-   column 4 **if it belongs to your team**, even if your teammate placed it.
-   All discs above fall one square. Popping uses your turn and your token;
-   your teammate retains their own token.
-6. After a pop, exactly one team with a winning line wins, even if it is the
-   opposing team. If both teams get winning lines at once, it is a draw.
-7. Invalid actions spend neither turn nor token. A full column cannot accept
-   a drop but may be popped. A completely full board with no winning line is
-   an immediate draw, even if pop tokens remain.
+1. The referee shuffles the three players into a fixed turn order and assigns
+   `X`, `O`, and `@`. Turns cycle through those players throughout the match.
+2. `drop 4` places your disc in the lowest empty square in column 4. A bare
+   column number is shorthand for `drop`.
+3. Four or more **of your own symbol** horizontally, vertically, or diagonally
+   wins immediately. Opponents' discs never contribute to your winning line.
+4. Each player gets **one Pop token**. On your turn, `pop 4` removes column 4's
+   bottom disc **only if it is yours**. Every disc above falls one square.
+   Popping consumes your token and your turn.
+5. After any move, the whole board is checked. A pop may give an opponent a
+   win. If exactly one player has winning lines, that player wins. If multiple
+   players have winning lines at once, the game is a draw. Multiple lines for
+   one player still count as that single player's victory.
+6. Invalid actions use neither your turn nor token. Full columns reject drops
+   but may allow a pop. A completely full board without a winner is an immediate
+   draw, even if unused Pop tokens remain.
 
-There is no time limit after the lobby. The display shows team membership,
-turn order, each person's remaining pop token, and **YOUR TURN** when you can
-act. Disconnection cancels the match, rather than awarding a victory.
+No elimination, timer after the lobby, swapping, energy, or special roles.
+The display shows all discs, each player's symbol, turn order, and remaining
+Pop tokens. A disconnection cancels the match rather than awarding a victory.
 
 ## Commands
 
-| Command | Meaning |
+| Command | Effect |
 | --- | --- |
-| `drop 4` or `4` | Drop your team's disc in column 4 |
-| `pop 4` | Spend your token to remove your team's bottom disc |
-| `team Block column 3` | Private team chat to you and your teammate |
-| `say Good luck!` | Public chat |
-| `/w Alice Hi` | Whisper privately to a named player (case-insensitive name) |
-| `look` | Redisplay the board, or current lobby roster and remaining time |
+| `drop 4` or `4` | Drop your disc into column 4 |
+| `pop 4` | Remove your own bottom disc using your one Pop token |
+| `say Block column 3!` | Public chat to all players |
+| `/w Alice Watch Bob's diagonal` | Private whisper to one named player |
+| `look` | Redisplay the board or current lobby roster and remaining time |
 | `help` | Show commands |
 | `quit` | Leave and cancel the match |
 
-Public chat and whispers work during the lobby. Team chat becomes available
-once teams are assigned. Chat remains available outside your turn. The client
-is a plain scrolling terminal; incoming text may appear while you type. Your
-command still works, and `look` redraws the board. The lobby displays remaining
-time on joins, departures, and `look`; it is not a continuously ticking timer.
+Whispers resolve names ignoring case. Public chat and whispers work both in
+the lobby and during other players' turns. There is no team/alliance chat.
+Players can negotiate or bluff, but promises have no effect on the rules.
+An incoming message may appear while you're typing in this scrolling terminal;
+your command remains intact, and `look` redraws the board. Lobby time is shown
+on joins, departures, and `look`, not as a continuously ticking display.
 
-## Classroom mode: separate Linux users
+## Classroom mode: three separate Linux player users
 
-The one-script demo shares your Linux UID for convenient local testing. The
-assignment's strict, separate-user mode uses the Python entry points directly.
-`setup.sh` is an optional installation tool, not another play/launch script.
+The easy launcher is a **demo** sharing your UID. Strict separate-user mode
+uses the same Python files directly. `setup.sh` is an optional installation
+tool, not a second play script.
 
 ```bash
 sudo ./setup.sh
@@ -144,128 +148,149 @@ sudo install -d -o c4-referee -g connect4 -m 2750 /tmp/connect4-class
 sudo -u c4-referee python3 /opt/connect4-mayhem/server.py --socket /tmp/connect4-class/game.sock --lobby-seconds 120
 ```
 
-Join four clients in separate terminals during that joining period:
+Join these three clients in separate terminals during the joining period:
 
 ```bash
 sudo -u c4-player1 python3 /opt/connect4-mayhem/client.py Alice --socket /tmp/connect4-class/game.sock
 sudo -u c4-player2 python3 /opt/connect4-mayhem/client.py Bob --socket /tmp/connect4-class/game.sock
 sudo -u c4-player3 python3 /opt/connect4-mayhem/client.py Cara --socket /tmp/connect4-class/game.sock
-sudo -u c4-player4 python3 /opt/connect4-mayhem/client.py Dan --socket /tmp/connect4-class/game.sock
 ```
 
-Setup creates group `connect4`, `c4-referee`, and `c4-player1` through
-`c4-player4`, then installs the game in `/opt/connect4-mayhem`. These locked
-service accounts have no interactive login shell or home directory. An
-authorized operator uses sudo to start each process; the nickname is independent
-of its Linux user. Rerun setup after changing source files.
+Setup creates group `connect4` and four locked accounts: `c4-referee` plus
+`c4-player1`–`c4-player3`. It installs the code in `/opt/connect4-mayhem`. Rerun
+setup after source changes. Upgrading does not delete an old `c4-player4` account;
+it is simply unused. Accounts have no home directories or interactive shells.
+An authorized operator uses sudo to start their processes.
 
-The referee verifies actual Linux UIDs with `SO_PEERCRED`; four different
-player UIDs are required, all different from the referee. Shared group access
-and directory mode `2750` let players connect without replacing the socket.
-The socket has mode `0660`. Existing human Linux accounts can instead join
-if they belong to `connect4` and log in again after group changes. They run
-the same client command directly without sudo, under their own Linux accounts.
+The referee uses Linux `SO_PEERCRED` to verify each real connecting UID. It
+rejects its own UID and a second player using an already joined UID. Nicknames
+don't bypass this check. Socket directory mode `2750` and socket mode `0660`
+give the shared group access without permission to replace the referee socket.
 
-Automatic bot filling is a demo feature because server-spawned bots share the
-referee's UID. Strict mode requires four joined clients; an underfilled lobby
-cancels. To test strict mode with a bot, add `--bot` to any of the four separate
-client commands above. It will run under that account, preserving separate UIDs.
-SSH can provide terminals on the same machine; the game itself uses local
-sockets, and the locked service accounts cannot log in over SSH themselves.
+Automatic bot filling is a demo feature: those children share the referee's
+UID. Strict mode requires three joined clients and cancels an underfilled lobby.
+You can append `--bot` to any of the separate-account client commands above to
+run an automated player under that account and retain distinct UIDs.
+
+Existing individual Linux accounts may instead join if added to `connect4`
+(log in again after group changes); they run the client directly without sudo.
+Keep the referee on a different account. SSH may supply terminals on the same
+Linux machine, but the game uses local sockets rather than network gameplay.
+Locked service accounts cannot log in through SSH themselves.
+
+## Does this meet the assignment?
+
+**The game design and implementation fit the technical requirements.** The
+assignment allows any strategic text game; Werewolves roles and teams are not
+required. Its wording allows **multicast or broadcast**. This version has
+broadcast and direct player-to-player whispers; gameplay does not need multicast.
+
+| Requirement | How this project addresses it |
+| --- | --- |
+| Strategy and text gameplay | Blocking, planning lines, and deciding when to Pop |
+| Each player has a process and Linux user | Independent clients; distinct UIDs enforced in classroom mode |
+| All communication in a single library file | `communication.py` |
+| Primitive beyond named pipes | UNIX-domain stream sockets |
+| Non-trivial message delivery | Unicast whispers and replies; broadcast board, chat, and results |
+| Concurrency | Accept/reader threads, independent clients, concurrent chat and input |
+| Source and README with file descriptions/API | Included in the source archive |
+| PDF writeup with gameplay screenshots | **Still needs to be added for submission** |
+| Understanding the primitive/library | You must be able to explain framing, sockets, queues, and threads |
+
+Before submitting, run a complete classroom-mode game under three actual
+player UIDs, create the PDF with real gameplay screenshots, and rebuild the
+`.tgz`. The automated tests check UID rejection but do not replace an end-to-end
+classroom-mode test. The archive alone is not yet a complete submission.
 
 ## Files and communication API
 
 | File | Responsibility |
 | --- | --- |
-| **`communication.py`** | **Single-file transport library: sockets, JSON framing, threads, queues, peer credentials** |
-| `server.py` | Timed lobby, bot-process lifecycle, random teams, board, rules, routing |
-| `client.py` | Named human client or random bot; text display and command parsing |
-| `launch_game.sh` | Single play script: host, join by name, or immediate three-bot mode |
-| `setup.sh` | Optional separate-user installation |
-| `tests/` | Rules, framing, lobby, naming, bot fill, privacy, and integration checks |
+| **`communication.py`** | **Entire transport library: sockets, framing, threads, queues, peer UIDs** |
+| `server.py` | Lobby, bot lifecycle, three-player rules, board, validation, routing |
+| `client.py` | Named human client or bot, command parsing, terminal display |
+| `launch_game.sh` | One script to host, join, or play against two bots |
+| `setup.sh` | Optional separate-user system installation |
+| `tests/` | Rules, stream framing, lobby, bots, privacy, and integration checks |
 
-Only three runtime Python files; no third-party packages or graphical tools.
-All inter-user messages go through `communication.py`. Spawning a bot starts
-another independent client process; the server does not play moves for it.
+Only three Python files are required at runtime. Bots are independent clients;
+the referee doesn't play their moves for them.
 
-The primitive is a **UNIX stream socket** (`AF_UNIX`, `SOCK_STREAM`), not a
-named pipe. Each message is one UTF-8 JSON dictionary followed by a newline.
-The library handles fragmented/coalesced stream reads and rejects malformed
-messages or messages over 8 KiB. Each socket has a write lock to prevent
-interleaving bytes. The referee has an accept thread and a reader thread per
-connection. Those threads enqueue events; only the main loop mutates game state.
-Clients receive messages while their keyboard thread waits for input. The
-lobby deadline uses a monotonic clock. The server remains responsive to all
-players' chat even though drops/pops take turns.
+The primitive is a **UNIX stream socket** (`AF_UNIX`, `SOCK_STREAM`). Each
+message is a UTF-8 JSON dictionary followed by a newline. The library handles
+fragmented messages and multiple messages in a single stream read. Malformed
+input or messages larger than 8 KiB close the connection. Each socket has a
+write lock to prevent interleaving message bytes.
 
-- **Broadcast:** public board, teams, lobby, moves, and results.
-- **Unicast:** private whispers, confirmations, errors, and `look` replies.
-- **Multicast:** team chat delivered to exactly the two assigned teammates.
+An accept thread and a reader thread per server connection enqueue events.
+One main server loop changes game state. Client receiver threads run while a
+keyboard thread waits for input. Chat remains concurrent even though game
+moves take turns. Monotonic time controls the lobby deadline.
 
-Multicast is application-level delivery across two stream connections. Team
-membership and sender identity come from server state, never client claims.
-Whispers between players are relayed through the referee. No separate IPC
-channel carries player messages.
+- **Unicast:** private whispers, acknowledgements, errors, and `look` replies.
+- **Broadcast:** public board, roster, moves, chat, and results.
+- **Multicast API:** retained as a general library utility, but unused by this
+  game's rules. There are no team channels.
+
+All player-to-player messages are relayed through the referee using this
+library. The sender is determined by its connection, not client-supplied text.
 
 | API | Behavior |
 | --- | --- |
 | `default_socket()` | Per-Linux-user demo socket pathname |
-| `Server(path)` | Bind a new socket in an existing directory |
+| `Server(path)` | Bind a new socket in an existing parent directory |
 | `server.receive(timeout=None)` | `(connection_id, event)` or `None` on timeout |
 | `server.send(id, message)` | Unicast a dictionary; return success boolean |
-| `server.multicast(ids, message)` | Send to listed connection IDs |
-| `server.broadcast(message)` | Send to all current connections |
-| `server.disconnect(id)` | Close a connection |
-| `server.close()` | Close connections and remove the bound socket |
-| `Client(path)` | Connect to a referee |
+| `server.multicast(ids, message)` | Send to selected connection IDs |
+| `server.broadcast(message)` | Send to all connections |
+| `server.disconnect(id)` | Close one connection |
+| `server.close()` | Close sockets and remove the bound pathname |
+| `Client(path)` | Connect to the referee |
 | `client.send(message)` | Send a dictionary |
 | `client.receive(timeout=None)` | Receive a dictionary or `None` on timeout |
 | `client.close()` | Disconnect |
 
-Server events are `connected` (with kernel UID/user), `message` (with a payload),
-and `disconnected`, wrapped in a `kind` field. Clients receive a
-`{"type":"disconnected"}` message on EOF. `timeout=None` blocks; zero polls.
-Constructors and client sends may raise `OSError`; oversize sends raise
-`ValueError`. The server owns connections until `close()`.
+Server events use `kind`: `connected` (kernel UID/user), `message` (payload),
+or `disconnected`. Clients receive `{"type":"disconnected"}` on EOF.
+`timeout=None` blocks; zero polls. Constructors and client sends may raise
+`OSError`; oversized sends raise `ValueError`.
 
-Example protocol messages:
+Example application messages:
 
 ```json
 {"type":"join","name":"Alice"}
 {"type":"drop","column":4,"move":1}
-{"type":"pop","column":4,"move":5}
-{"type":"chat","channel":"team","text":"Block left."}
-{"type":"chat","channel":"private","target":"Bob","text":"Hello!"}
+{"type":"pop","column":4,"move":4}
+{"type":"chat","channel":"private","target":"Bob","text":"Watch column 3."}
+{"type":"chat","channel":"all","text":"Good luck!"}
 ```
 
-The public `state` includes `board`, `teams`, `symbols`, `order`, `turn`,
-`move`, `pops`, `winner` (team symbol), `draw`, and `draw_reason`. `lobby`
-messages include names, time remaining, whether bot fill is enabled, and
-whether joining is open. Old move numbers are rejected. Automatic bots receive
-private, per-process joining tokens so only the server's expected bots can
-fill reserved seats after the public joining period ends.
+Public state includes `board`, `symbols`, `order`, `turn`, `move`, `pops`,
+`winner` (a player's name), `draw`, and `draw_reason`. Lobby messages include
+names, capacity (3), time remaining, bot-fill setting, and whether joining is
+open. Stale move numbers are rejected. Server-created bots use private joining
+tokens to enter reserved seats after public joining ends. The referee and
+machine administrators are trusted; this is not a hardened public service.
 
-The referee and machine administrators are trusted. This is a classroom
-program, not a hardened public service or an encrypted messaging system.
-
-## Tests and submission
+## Verify and package
 
 ```bash
 python3 -m unittest discover -s tests -v
 bash -n launch_game.sh setup.sh
 ```
 
-From the parent directory, create a source archive:
+From the parent directory, after adding your PDF writeup:
 
 ```bash
 tar --exclude='connect4-mayhem/.git' --exclude='__pycache__' \
   --exclude='*.tgz' -czf connect4-mayhem.tgz connect4-mayhem
 ```
 
-The final class submission still needs your **PDF writeup with actual gameplay
-screenshots**. Include it before packaging. Explain the communication primitive,
-API, concurrency, and delivery patterns; the README does not replace that PDF.
+The PDF should explain the game, communication primitive, API, concurrency,
+and unicast/broadcast behavior, and include gameplay screenshots. The README
+does not replace the PDF.
 
-To uninstall classroom mode, stop games, delete the five `c4-*` accounts above
-using `sudo userdel ACCOUNT`, delete group `connect4` using `sudo groupdel
-connect4`, and remove `/opt/connect4-mayhem`. The demo installs no accounts.
+To uninstall classroom mode, stop games, delete the three player accounts and
+referee account with `sudo userdel ACCOUNT`, delete group `connect4` with
+`sudo groupdel connect4`, then remove `/opt/connect4-mayhem`. The demo creates
+no Linux accounts or installed game files.

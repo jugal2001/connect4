@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Random 2v2 Connect-4, with a timed lobby and optional separate bot processes."""
+"""Three-player free-for-all Connect-4, with a timed lobby and optional separate bot processes."""
 
 import argparse
 import os
@@ -15,18 +15,17 @@ import time
 import communication
 
 ROWS, COLS = 6, 7
+PLAYER_COUNT = 3
 
 
 class Game:
     def __init__(self, names, rng):
         shuffled = list(names)
-        if len(shuffled) != 4 or len(set(shuffled)) != 4:
-            raise ValueError("Exactly four different players are required.")
+        if len(shuffled) != PLAYER_COUNT or len(set(shuffled)) != PLAYER_COUNT:
+            raise ValueError("Exactly three different players are required.")
         rng.shuffle(shuffled)
-        self.teams = {"X": shuffled[:2], "O": shuffled[2:]}
-        self.symbols = {name: symbol for symbol, members in self.teams.items() for name in members}
-        # Alternate teams, while both teammates get their own turns.
-        self.order = [shuffled[0], shuffled[2], shuffled[1], shuffled[3]]
+        self.order = shuffled
+        self.symbols = dict(zip(shuffled, ("X", "O", "@")))
         self.board = [["." for _ in range(COLS)] for _ in range(ROWS)]
         self.turn = 0
         self.move = 1
@@ -58,7 +57,7 @@ class Game:
         if not self.pops[player]:
             raise ValueError("You already used your pop token.")
         if self.board[-1][col] != self.symbols[player]:
-            raise ValueError("You can only pop your team's bottom disc.")
+            raise ValueError("You can only pop your own bottom disc.")
         for row in range(ROWS - 1, 0, -1):
             self.board[row][col] = self.board[row - 1][col]
         self.board[0][col] = "."
@@ -78,22 +77,23 @@ class Game:
                            for i in range(4)):
                         winning_symbols.add(symbol)
         if len(winning_symbols) == 1:
-            self.winner = winning_symbols.pop()
+            symbol = winning_symbols.pop()
+            self.winner = next(p for p, disc in self.symbols.items() if disc == symbol)
         elif len(winning_symbols) > 1:
             self.draw = True
-            self.draw_reason = "Both teams connected four at once."
+            self.draw_reason = "Multiple players connected four at once."
         elif all(cell != "." for cell in self.board[0]):
             self.draw = True
             self.draw_reason = "The board is full."
         if not self.winner and not self.draw:
-            self.turn = (self.turn + 1) % 4
+            self.turn = (self.turn + 1) % PLAYER_COUNT
             self.move += 1
 
     def state(self):
         return {"type": "state", "board": self.board, "turn": self.order[self.turn],
                 "move": self.move, "winner": self.winner, "draw": self.draw,
                 "pops": self.pops, "draw_reason": self.draw_reason,
-                "teams": self.teams, "symbols": self.symbols, "order": self.order}
+                "symbols": self.symbols, "order": self.order}
 
 
 def valid_name(name):
@@ -119,24 +119,24 @@ def run(args):
     def lobby_view():
         return {"type": "lobby", "names": list(players),
                 "seconds": 0 if args.solo else max(0, int(deadline - time.monotonic() + 0.999)),
-                "bots": args.bots, "open": lobby_open}
+                "bots": args.bots, "open": lobby_open, "capacity": PLAYER_COUNT}
 
     print(f"Lobby open for {args.lobby_seconds:g} seconds: {args.socket}", flush=True)
     print("Join in another terminal: ./launch_game.sh My-name", flush=True)
-    print("DEMO: shared UIDs allowed" if args.demo else "CLASS: four distinct player UIDs required", flush=True)
+    print("DEMO: shared UIDs allowed" if args.demo else "CLASS: three distinct player UIDs required", flush=True)
     try:
         while True:
             now = time.monotonic()
             if lobby_open and (now >= deadline or (args.solo and players)):
                 lobby_open = False
-                if len(players) < 4 and (not args.bots or not players):
-                    reason = "At least one human must join." if args.bots else "Four players must join."
+                if len(players) < PLAYER_COUNT and (not args.bots or not players):
+                    reason = "At least one human must join." if args.bots else "Three players must join."
                     transport.broadcast({"type": "end", "text": f"Lobby closed: {reason} Restart the server to try again."})
                     print(reason, flush=True)
                     return
                 roster = list(players)
                 # Bots are real client processes using the same socket protocol.
-                for number in range(1, 5 - len(players)):
+                for number in range(1, PLAYER_COUNT + 1 - len(players)):
                     name = f"Bot{number}"
                     token = secrets.token_hex(16)
                     expected_bots[name] = token
@@ -149,9 +149,9 @@ def run(args):
                 bot_deadline = now + 5
                 transport.broadcast(lobby_view())
             if not lobby_open and not game:
-                if len(players) == 4:
+                if len(players) == PLAYER_COUNT:
                     game = Game(roster, rng)
-                    print(f"Teams: {game.teams}; turn order: {game.order}", flush=True)
+                    print(f"Players: {game.symbols}; turn order: {game.order}", flush=True)
                     transport.broadcast(game.state())
                 elif now >= bot_deadline or any(p.poll() is not None for p in bot_processes):
                     transport.broadcast({"type": "end", "text": "Could not fill all bot seats. Restart the server."})
@@ -193,13 +193,13 @@ def run(args):
                     if not lobby_open and not is_fill_bot:
                         error = "The joining period has ended."
                     elif args.solo and players and not is_fill_bot:
-                        error = "Solo mode has one human and three bots."
+                        error = "Solo mode has one human and two bots."
                     elif not valid_name(name):
                         error = "Use 1–20 letters, digits, underscores or hyphens; start with a letter."
                     elif name.lower().startswith("bot") and not is_fill_bot:
                         error = "Names beginning with Bot are reserved for automatic bots."
-                    elif len(players) == 4:
-                        error = "The lobby is full (four players)."
+                    elif len(players) == PLAYER_COUNT:
+                        error = "The lobby is full (three players)."
                     elif name.casefold() in {p.casefold() for p in players}:
                         error = "That name is already taken. Choose another."
                     else:
@@ -220,19 +220,19 @@ def run(args):
                     raise ValueError("Join the lobby first.")
                 if action in ("drop", "pop"):
                     if not game:
-                        raise ValueError("Wait until the joining period ends and teams are assigned.")
+                        raise ValueError("Wait until the joining period ends and the game starts.")
                     if message.get("move") != game.move:
                         raise ValueError("That command used an older board. Type look and try again.")
                     if action == "pop":
                         game.pop(player, message.get("column"))
-                        description = "popped a team disc from"
+                        description = "popped their bottom disc from"
                     else:
                         game.drop(player, message.get("column"))
                         description = "dropped in"
                     transport.broadcast({"type": "info", "text": f"{player} ({game.symbols[player]}) {description} column {message['column']}."})
                     transport.broadcast(game.state())
                     if game.winner or game.draw:
-                        result = (f"Team {game.winner} wins! {' + '.join(game.teams[game.winner])}."
+                        result = (f"{game.winner} ({game.symbols[game.winner]}) wins! Four connected!"
                                   if game.winner else f"Draw! {game.draw_reason}")
                         transport.broadcast({"type": "end", "text": result})
                         print(result, flush=True)
@@ -254,11 +254,6 @@ def run(args):
                             raise ValueError("Whisper to another connected player by name.")
                         transport.send(players[target], chat)
                         reply(connection_id, f"Whisper to {target}: {text}")
-                    elif channel == "team":
-                        if not game:
-                            raise ValueError("Teams are assigned when the joining period ends.")
-                        members = game.teams[game.symbols[player]]
-                        transport.multicast([players[p] for p in members], chat)
                     else:
                         raise ValueError("Unknown chat channel.")
                 else:
@@ -286,7 +281,7 @@ def main():
     parser.add_argument("--socket", default=communication.default_socket())
     parser.add_argument("--demo", action="store_true", help="allow shared Linux UIDs for testing")
     parser.add_argument("--bots", action="store_true", help="fill empty seats at lobby close (demo only)")
-    parser.add_argument("--solo", action="store_true", help="start with three bots as soon as the host joins")
+    parser.add_argument("--solo", action="store_true", help="start with two bots as soon as the host joins")
     parser.add_argument("--lobby-seconds", type=float, default=30)
     parser.add_argument("--bot-delay", type=float, default=0.6)
     parser.add_argument("--seed", type=int)
