@@ -32,13 +32,15 @@ class IntegrationTests(unittest.TestCase):
         self.log.close()
         self.temp.cleanup()
 
-    def start(self, bots=False, demo=True, seconds=0.6):
+    def start(self, bots=False, demo=True, seconds=0.6, solo=False):
         command = [sys.executable, '-u', 'server.py', '--socket', self.path,
                    '--lobby-seconds', str(seconds), '--bot-delay', '0', '--seed', '42']
         if demo:
             command.append('--demo')
         if bots:
             command.append('--bots')
+        if solo:
+            command.append('--solo')
         self.started = time.monotonic()
         self.server = subprocess.Popen(command, cwd=ROOT, stdout=self.log, stderr=self.log)
         deadline = time.monotonic()+5
@@ -122,6 +124,16 @@ class IntegrationTests(unittest.TestCase):
         self.until(human, 'end')
         self.assertEqual(self.server.wait(timeout=5), 0)
         self.assertFalse(Path(self.path).exists())
+
+    def test_solo_starts_immediately_with_exactly_three_bots(self):
+        self.start(seconds=30, solo=True)
+        human = self.join('Host')
+        state = self.until(human, 'state')
+        self.assertLess(time.monotonic() - self.started, 5)
+        self.assertEqual(set(state['symbols']), {'Host', 'Bot1', 'Bot2', 'Bot3'})
+        late = self.join('Guest')
+        self.until(late, 'error')
+        self.until(late, 'disconnected')
 
     def test_two_humans_fill_only_two_bots_and_reject_late_join(self):
         self.start(bots=True)

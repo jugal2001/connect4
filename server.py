@@ -118,16 +118,16 @@ def run(args):
 
     def lobby_view():
         return {"type": "lobby", "names": list(players),
-                "seconds": max(0, int(deadline - time.monotonic() + 0.999)),
+                "seconds": 0 if args.solo else max(0, int(deadline - time.monotonic() + 0.999)),
                 "bots": args.bots, "open": lobby_open}
 
     print(f"Lobby open for {args.lobby_seconds:g} seconds: {args.socket}", flush=True)
-    print("Join in another terminal: ./join_game.sh My-name", flush=True)
+    print("Join in another terminal: ./launch_game.sh My-name", flush=True)
     print("DEMO: shared UIDs allowed" if args.demo else "CLASS: four distinct player UIDs required", flush=True)
     try:
         while True:
             now = time.monotonic()
-            if lobby_open and now >= deadline:
+            if lobby_open and (now >= deadline or (args.solo and players)):
                 lobby_open = False
                 if len(players) < 4 and (not args.bots or not players):
                     reason = "At least one human must join." if args.bots else "Four players must join."
@@ -192,6 +192,8 @@ def run(args):
                     error = None
                     if not lobby_open and not is_fill_bot:
                         error = "The joining period has ended."
+                    elif args.solo and players and not is_fill_bot:
+                        error = "Solo mode has one human and three bots."
                     elif not valid_name(name):
                         error = "Use 1–20 letters, digits, underscores or hyphens; start with a letter."
                     elif name.lower().startswith("bot") and not is_fill_bot:
@@ -264,6 +266,10 @@ def run(args):
             except ValueError as error:
                 reply(connection_id, str(error), "error")
     finally:
+        # Let cleanup finish even if the launcher sends a stop while we are
+        # already closing a completed match and its bot processes.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         transport.close()
         for process in bot_processes:
             if process.poll() is None:
@@ -280,10 +286,13 @@ def main():
     parser.add_argument("--socket", default=communication.default_socket())
     parser.add_argument("--demo", action="store_true", help="allow shared Linux UIDs for testing")
     parser.add_argument("--bots", action="store_true", help="fill empty seats at lobby close (demo only)")
+    parser.add_argument("--solo", action="store_true", help="start with three bots as soon as the host joins")
     parser.add_argument("--lobby-seconds", type=float, default=30)
     parser.add_argument("--bot-delay", type=float, default=0.6)
     parser.add_argument("--seed", type=int)
     args = parser.parse_args()
+    if args.solo:
+        args.bots = True
     if not 0 < args.lobby_seconds <= 3600 or not 0 <= args.bot_delay <= 60:
         parser.error("Lobby must be 0–3600 seconds (exclusive of zero); bot delay 0–60 seconds.")
     if args.bots and not args.demo:

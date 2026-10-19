@@ -8,101 +8,86 @@ Only Linux and Python 3.8+ are needed. The game uses Python's standard library;
 no pip packages or tmux are required. **All socket communication lives in
 [`communication.py`](communication.py).**
 
-## Start a game and join by name
+## One script to host, join, or play with bots
 
-From a downloaded archive:
+Extract the archive and enter the folder:
 
 ```bash
 tar -xzf connect4-mayhem.tgz
 cd connect4-mayhem
 ```
 
-If necessary, install Python on Ubuntu/Debian:
+Only Python is needed (`sudo apt install python3` on Ubuntu/Debian).
 
-```bash
-sudo apt update
-sudo apt install -y python3
-```
-
-**Terminal 1 — start a lobby with automatic bots:**
+**Play immediately against three bots:**
 
 ```bash
 ./launch_game.sh --bots
 ```
 
-**Terminal 2 — join during the initial 30 seconds:**
+You automatically join as **Host**. Three separate bot processes fill the
+other seats immediately; there is no 30-second wait and no second terminal
+needed. Teams are random, so one bot is your teammate and two are opponents.
+
+**Host a game for friends:**
 
 ```bash
-cd /path/to/connect4-mayhem
-./join_game.sh My-name
-```
-
-The equivalent Python command is:
-
-```bash
-python3 client.py My-name
-```
-
-If you are the only person who joins, the server starts **three separate bot
-processes** when the 30 seconds expire. You then control only your own player
-and see the whole board in one terminal. Two humans get two bots; three humans
-get one bot; four humans get none. No one joining means the lobby closes
-without starting bots.
-
-**Four-human game:**
-
-```bash
-# Terminal 1: referee
 ./launch_game.sh
-
-# Each player uses their own terminal during the 30-second joining period:
-./join_game.sh Alice
-./join_game.sh Bob
-./join_game.sh Cara
-./join_game.sh Dan
 ```
 
-Without `--bots`, fewer than four players at the deadline cancels the lobby.
-Even when four players join early, teams are assigned only when the joining
-period ends. A fifth player, a duplicate name, or a late join is rejected.
-You cannot replace bots or reconnect after a match starts.
+You automatically join as **Host** in that terminal. The game waits 30 seconds
+for up to three other people. They join from their own terminals using the
+**same script**, with their name:
+
+```bash
+./launch_game.sh Alice
+./launch_game.sh Bob
+./launch_game.sh Cara
+```
+
+When the timer expires, all empty seats become bots: Host alone gets three
+bots; Host plus Alice gets two; three humans get one; four humans get none.
+The game waits the full joining period even if all four seats fill early.
+Late joins, a fifth player, and duplicate names are rejected. You cannot
+replace a bot or reconnect after the game begins.
 
 Names use 1–20 letters, digits, underscores or hyphens, starting with a letter.
-Names are unique ignoring case. Names beginning with `Bot` are reserved for
-server-created bots. **The name is a game nickname, not a Linux login or a
-password.** The default demo permits all clients to run under your current
-Linux account; use classroom mode below for separate Linux users.
+Names are unique ignoring case. `Host` is already taken by the host; names
+beginning with `Bot` are reserved for automatic bots. Names are game nicknames,
+not Linux account logins or passwords.
 
-Useful options:
+Type `drop 4` (or just `4`) when the board says **YOUR TURN**. `pop 4` spends
+your personal pop token. `team MESSAGE` talks privately to your teammate.
+Bots choose random legal moves, including occasional pops; they don't follow
+instructions sent through chat.
+
+Run `./launch_game.sh --help` for a short command reminder. There is no separate
+joining script. The host's launcher starts the referee in the background,
+shows the host's client in the foreground, and cleans up the referee and bots
+when the match finishes or the host exits. `quit` or Ctrl-C leaves the game.
+Leaving any client cancels the match for everyone. A guest's launcher never
+owns or stops the referee directly. Start the launcher again for a new game.
+
+The single-script demo uses your current Linux account for all processes.
+Use the same Linux account in the other terminals to reach its private socket,
+`/tmp/connect4-mayhem-<UID>/game.sock`. See classroom mode below to use distinct
+Linux users. The launcher refuses to overwrite an existing game socket. After
+a forced kill (SIGKILL), a stale socket may need removing once you have verified
+that its old referee is gone.
+
+For advanced testing, the underlying Python entry points remain available:
 
 ```bash
-./launch_game.sh --bots --lobby-seconds 60      # more time to open terminals
-./launch_game.sh --bots --seed 42              # reproducible random choices
-./launch_game.sh --bots --lobby-seconds 5 --bot-delay 0.2
+# Referee only; you must separately join a named client:
+python3 server.py --demo --bots --lobby-seconds 5 --seed 42
+# Another terminal:
+python3 client.py Alice
 ```
 
-The seed controls teams and bot seeds. Reproducing a match also requires the
-same joining order and player actions. Bots make random legal moves, including
-occasional pops. They do not understand team-chat instructions or plan strategy.
-Your teammate may be a bot; team assignments are public and fixed for the match.
-
-The default socket is `/tmp/connect4-mayhem-<your Linux UID>/game.sock`. Run the
-launcher and named client as the same Linux user for the demo. To run another
-simultaneous game, supply an explicit socket path with an existing parent:
-
-```bash
-mkdir -m 700 /tmp/my-other-connect4-game
-./launch_game.sh --bots --socket /tmp/my-other-connect4-game/game.sock
-# In another terminal:
-./join_game.sh Alice --socket /tmp/my-other-connect4-game/game.sock
-```
-
-The referee owns its spawned bots and stops them when the match ends, it is
-interrupted with Ctrl-C, or a player disconnects. `quit` exits the client and
-cancels the match. Start the referee again for another 30-second lobby. An
-existing socket is never silently replaced. Do not remove one belonging to a
-running game. A forced kill (SIGKILL) can leave a stale socket requiring removal
-once you have verified the old referee is gone.
+These server flags are deliberately not part of the simple launcher. The seed
+controls team assignment and bot seeds; reproducing a match also requires the
+same joining order and player actions. For parallel games use `--socket PATH`
+on both Python commands, with an existing socket parent directory.
 
 ## Rules
 
@@ -149,58 +134,44 @@ time on joins, departures, and `look`; it is not a continuously ticking timer.
 
 ## Classroom mode: separate Linux users
 
-The default bot demo intentionally shares your Linux UID so one person can
-run it without administrator access. For the assignment's separate-user mode:
+The one-script demo shares your Linux UID for convenient local testing. The
+assignment's strict, separate-user mode uses the Python entry points directly.
+`setup.sh` is an optional installation tool, not another play/launch script.
 
 ```bash
 sudo ./setup.sh
-./launch_game.sh --class
+sudo install -d -o c4-referee -g connect4 -m 2750 /tmp/connect4-class
+sudo -u c4-referee python3 /opt/connect4-mayhem/server.py --socket /tmp/connect4-class/game.sock --lobby-seconds 120
 ```
 
-Within 30 seconds, run one command in each of four terminals:
+Join four clients in separate terminals during that joining period:
 
 ```bash
-./join_game.sh Alice --class --slot 1
-./join_game.sh Bob   --class --slot 2
-./join_game.sh Cara  --class --slot 3
-./join_game.sh Dan   --class --slot 4
+sudo -u c4-player1 python3 /opt/connect4-mayhem/client.py Alice --socket /tmp/connect4-class/game.sock
+sudo -u c4-player2 python3 /opt/connect4-mayhem/client.py Bob --socket /tmp/connect4-class/game.sock
+sudo -u c4-player3 python3 /opt/connect4-mayhem/client.py Cara --socket /tmp/connect4-class/game.sock
+sudo -u c4-player4 python3 /opt/connect4-mayhem/client.py Dan --socket /tmp/connect4-class/game.sock
 ```
 
-Use a different slot per terminal. `--slot` selects a real Linux account;
-`Alice` is the independent display name. For more joining time, use
-`./launch_game.sh --class --lobby-seconds 120` (the `--class` flag comes first).
+Setup creates group `connect4`, `c4-referee`, and `c4-player1` through
+`c4-player4`, then installs the game in `/opt/connect4-mayhem`. These locked
+service accounts have no interactive login shell or home directory. An
+authorized operator uses sudo to start each process; the nickname is independent
+of its Linux user. Rerun setup after changing source files.
 
-Setup creates group `connect4`, referee account `c4-referee`, and four player
-accounts `c4-player1` through `c4-player4`. It installs sources and scripts in
-`/opt/connect4-mayhem`. Accounts are locked, with no interactive login shells
-or home directories. Sudo starts the processes; there are no game passwords.
-Existing unrelated accounts are not repurposed. Rerun setup after code changes.
+The referee verifies actual Linux UIDs with `SO_PEERCRED`; four different
+player UIDs are required, all different from the referee. Shared group access
+and directory mode `2750` let players connect without replacing the socket.
+The socket has mode `0660`. Existing human Linux accounts can instead join
+if they belong to `connect4` and log in again after group changes. They run
+the same client command directly without sudo, under their own Linux accounts.
 
-The referee runs under its own UID and validates client UIDs using Linux
-`SO_PEERCRED`. It rejects its own UID and any second player using an already
-joined UID, regardless of claimed nickname. Socket-directory mode `2750` and
-socket mode `0660` let players connect without replacing the referee's socket.
-
-**Automatic bot filling is a demo feature:** its child processes share the
-referee's UID and therefore cannot satisfy strict mode's distinct-user rule.
-The server rejects `--bots` without `--demo`. You can manually run a bot under
-any of the four separate accounts while retaining strict mode:
-
-```bash
-./join_game.sh Computer --class --slot 2 --bot
-```
-
-Existing human Linux accounts can instead join strict mode if they belong to
-`connect4` (log in again after group changes). Each human runs:
-
-```bash
-python3 /opt/connect4-mayhem/client.py Alice --socket /tmp/connect4-class/game.sock
-```
-
-Keep the referee on a different account. SSH may provide terminals on the same
-Linux machine; the game itself uses local sockets, not network transport.
-Service accounts cannot log in over SSH directly. The sudo join commands are
-for an authorized operator starting those accounts' processes.
+Automatic bot filling is a demo feature because server-spawned bots share the
+referee's UID. Strict mode requires four joined clients; an underfilled lobby
+cancels. To test strict mode with a bot, add `--bot` to any of the four separate
+client commands above. It will run under that account, preserving separate UIDs.
+SSH can provide terminals on the same machine; the game itself uses local
+sockets, and the locked service accounts cannot log in over SSH themselves.
 
 ## Files and communication API
 
@@ -209,8 +180,7 @@ for an authorized operator starting those accounts' processes.
 | **`communication.py`** | **Single-file transport library: sockets, JSON framing, threads, queues, peer credentials** |
 | `server.py` | Timed lobby, bot-process lifecycle, random teams, board, rules, routing |
 | `client.py` | Named human client or random bot; text display and command parsing |
-| `launch_game.sh` | Start the demo or strict referee |
-| `join_game.sh` | Join by display name, optionally under a class account |
+| `launch_game.sh` | Single play script: host, join by name, or immediate three-bot mode |
 | `setup.sh` | Optional separate-user installation |
 | `tests/` | Rules, framing, lobby, naming, bot fill, privacy, and integration checks |
 
@@ -282,7 +252,7 @@ program, not a hardened public service or an encrypted messaging system.
 
 ```bash
 python3 -m unittest discover -s tests -v
-bash -n launch_game.sh join_game.sh setup.sh
+bash -n launch_game.sh setup.sh
 ```
 
 From the parent directory, create a source archive:

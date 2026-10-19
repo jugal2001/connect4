@@ -25,8 +25,7 @@ install -d -m 755 /opt/connect4-mayhem
 for file in communication.py server.py client.py README.md; do
     install -m 644 "$project_dir/$file" "/opt/connect4-mayhem/$file"
 done
-for file in launch_game.sh join_game.sh; do
-    install -m 755 "$project_dir/$file" "/opt/connect4-mayhem/$file"
-done
-echo 'Ready: ./launch_game.sh --class'
-echo 'Then join from four terminals: ./join_game.sh Alice --class --slot 1 (use slots 1–4)'
+install -m 755 "$project_dir/launch_game.sh" /opt/connect4-mayhem/launch_game.sh
+# Remove the obsolete play entry point when upgrading an older installation.
+rm -f /opt/connect4-mayhem/join_game.sh
+echo 'Installed. See README.md for separate-Linux-user server and client commands.'
