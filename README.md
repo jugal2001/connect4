@@ -177,3 +177,49 @@ terminal interface and bot decisions. Each human or bot is a separate client
 process. Bots evaluate legal drops and Pops for immediate wins, opponent
 threats, and usable four-disc lines; randomness breaks equal scores. They do
 not search several turns ahead.
+
+## Communications library
+
+> **The communications library is [`communication.py`](communication.py), in the top level of this repository.**
+> `setup.sh` also installs a copy at `/opt/connect4-mayhem/communication.py`, which is used by the separate-Linux-account mode.
+
+All interprocess communication in the game goes through this one file. `server.py` and `client.py` never open sockets themselves.
+
+**Transport:** local UNIX stream sockets (`AF_UNIX`, `SOCK_STREAM`).
+**Messages:** one JSON object per line (newline-delimited), at most 8 KiB each.
+**Socket address:** `/tmp/connect4-mayhem-<UID>/game.sock` in the shared-account mode, `/run/connect4-mayhem/game.sock` in the separate-account mode.
+**Identity:** on every connection the server reads the peer's Linux UID from the kernel (`SO_PEERCRED`), so a client cannot claim to be someone else.
+
+### API
+
+| Call | Returns | Description |
+|---|---|---|
+| `default_socket()` | path string | Default per-user socket address |
+| **`Server(path)`** | server object | Binds and listens on the socket and starts accepting clients. Raises `OSError` if the path is in use. |
+| `server.receive(timeout=None)` | `(connection_id, event)` or `None` | Next event. `event["kind"]` is `connected` (with `uid` and `user`), `message` (with `payload`), or `disconnected`. `None` means the timeout expired. |
+| `server.send(connection_id, message)` | `True` / `False` | Unicast to one client. `False` if that client has gone away. |
+| `server.multicast(connection_ids, message)` | none | Send to the listed clients only. |
+| `server.broadcast(message)` | none | Send to every connected client. |
+| `server.disconnect(connection_id)` | none | Close one client's connection. |
+| `server.close()` | none | Stop accepting, close all connections, remove the socket file. |
+| **`Client(path)`** | client object | Connects to the server and starts a reader thread. Raises `OSError` on failure. |
+| `client.send(message)` | none | Send one message (a dictionary) to the server. |
+| `client.receive(timeout=None)` | message dict or `None` | Next message. `{"type": "disconnected"}` means the server went away. `None` means the timeout expired. |
+| `client.close()` | none | Close the connection. |
+
+Messages are plain Python dictionaries. Each connection has a reader thread that places incoming messages on a queue, so the game can keep receiving while it waits for keyboard input.
+
+## Files
+
+| File | Purpose |
+|---|---|
+| [`communication.py`](communication.py) | **The communications library** (the API above) |
+| [`server.py`](server.py) | The referee: owns the board, validates moves, checks wins and draws, and runs the lobby |
+| [`client.py`](client.py) | The terminal interface for a player, and the bot logic |
+| [`launch_game.sh`](launch_game.sh) | Launcher for all play modes (`--bots`, `--windows`, `--player N`) |
+| [`setup.sh`](setup.sh) | Installs dependencies, creates the game accounts, and installs a copy in `/opt/connect4-mayhem` |
+| [`tests/test_communication.py`](tests/test_communication.py) | Tests for the communications library |
+| [`tests/test_game.py`](tests/test_game.py) | Tests for the game rules and bot logic |
+| [`tests/test_integration.py`](tests/test_integration.py) | End-to-end tests over real sockets (lobby timing, privacy, bot fill) |
+
+Run the tests from the repository root with `python3 -m unittest discover -s tests`.
