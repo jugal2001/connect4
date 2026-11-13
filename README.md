@@ -1,42 +1,87 @@
 # Connect-4 Mayhem
 
-A terminal Connect-4 game for **three players**, each on their own machine.
-Players are `X`, `O` and `@`; the first to connect four of their own discs
-wins. Each player also has one **Pop token** to remove their own bottom disc
-from a column, which shifts that column down and can make or break lines for
-anyone.
+Connect-4 for **three players** in the terminal, with every player on their
+own machine (or a simulated one).
 
-| Folder | Version |
+## Rules
+
+- Players are `X`, `O` and `@` and take turns in a fixed, random order.
+- On your turn, type a column number to drop a disc. It lands on the lowest
+  empty square.
+- Connect **four of your own discs** in a row, column or diagonal to win.
+- Once per game you may **Pop**: remove your own disc from the bottom of a
+  column, so everything above it falls one square. This can make or break a
+  line for any player.
+- Several players connecting four at once, or a full board, is a draw.
+- If a player leaves or becomes unreachable, the match is cancelled.
+
+```
+    1 2 3 4 5 6 7
+  | . . . . . . . |
+  | . . . . . . . |
+  | . . . O . . . |
+  | . . @ X . . . |
+  | . . O X X . . |
+  | . @ O X @ . . |
+  +---------------+
+You: Player1 (X) | Order: Player2 -> Player1 -> Player3
+YOUR TURN — drop <1-7>, or pop <1-7> using your token:
+```
+
+| Type this | To |
 |---|---|
-| [`project2/`](project2/) | **Project 2/3 (this README):** distributed, over TCP |
-| [`project1/`](project1/) | Project 1: one machine, UNIX stream sockets ([README](project1/README.md), git tag `project1`) |
+| `4` | Drop a disc into column 4 |
+| `pop 4` | Use your Pop token on your own bottom disc in column 4 |
+| `say TEXT` | Message everyone |
+| `/w Player2 TEXT` | Whisper to one player |
+| `look`, `help`, `quit` | Redisplay the board, list commands, leave |
 
-## What changed since Project 1
+## Quick start
 
-| | Project 1 | Project 2/3 |
-|---|---|---|
-| Transport | UNIX stream socket (`AF_UNIX`), one machine | TCP (`AF_INET`), any reachable machine |
-| Player identity | Kernel-reported UID (`SO_PEERCRED`) | One-time seat token issued by the referee |
-| Failure detection | Kernel closes the socket when a process dies | Heartbeats: a silent peer is dropped after 6 s |
-| Stalled receiver | A blocked `sendall` could freeze the referee | Sends time out after 6 s and the peer is dropped |
-| Lobby | Fixed 30 s | Starts as soon as three players join (120 s limit) |
+On Ubuntu/Debian:
 
-The game rules, message format (one JSON object per line) and library API are
-otherwise unchanged, so the two `communication.py` files can be compared
-directly.
+```bash
+git clone https://github.com/jugal2001/connect4.git
+cd connect4/project2
+sudo ./simulate.sh demo
+```
 
-## Play
+This opens four tmux panes: the referee and three players, each on its own
+simulated machine and Linux user. The game starts right away. **Click a pane**
+to play as that player. To finish, type `quit` in a player pane, then press
+Enter to close the demo.
 
-Only Python 3 is required (standard library only). All commands run from
-`project2/`.
+To see the distributed part in action, open a second terminal mid-game and
+cut one player's network link:
 
-**Against two bots, one command:**
+```bash
+sudo ./simulate.sh cut 2
+```
+
+About five seconds later the referee notices and cancels the match.
+
+No sudo? Play against two bots instead (needs only Python 3):
 
 ```bash
 ./play.sh
 ```
 
-**Three players, on one machine or several.** One person starts the referee:
+## For reviewers
+
+Feedback on security and robustness is the most useful. Some places to look:
+
+- [`project2/communication.py`](project2/communication.py) is the whole
+  network layer (about 230 lines).
+- Can you join without a seat token, reuse one, or take someone else's seat?
+- Can a misbehaving client freeze or crash the referee (malformed messages,
+  floods, never reading)?
+- Traffic is not encrypted; see [Known limits](#design-notes) for what I
+  already know about.
+
+## Playing across real machines
+
+All commands run from `project2/`. Only Python 3 is required. One person
+starts the referee:
 
 ```bash
 python3 server.py
@@ -51,25 +96,31 @@ python3 client.py Player2 --host 192.168.1.20 --token e6dea474a782e971
 python3 client.py Player3 --host 192.168.1.20 --token 5b9e8da20ac97e4b
 ```
 
-Each player runs one of those lines in their own terminal (send them to the
-other players by any channel you like). The match starts when all three have
-joined. If the 120-second lobby expires first, bots take the empty seats.
+Each player runs one of those lines in their own terminal. The match starts
+when all three have joined. If the 120-second lobby expires first, bots take
+the empty seats.
 
 Referee options: `--port N` (default 5544), `--bind ADDRESS`, `--lobby SECONDS`,
 `--bots` (start as soon as one player joins).
 
-### In-game commands
+## What changed since Project 1
 
-| Command | Effect |
+| Folder | Version |
 |---|---|
-| `drop 4` or `4` | Drop a disc into column 4 |
-| `pop 4` | Spend your Pop token on your own bottom disc in column 4 |
-| `say TEXT` | Message everyone (broadcast) |
-| `/w Alice TEXT` | Message one player (unicast) |
-| `look`, `help`, `quit` | Redisplay the board, list commands, leave |
+| [`project2/`](project2/) | **Project 2/3 (this README):** distributed, over TCP |
+| [`project1/`](project1/) | Project 1: one machine, UNIX stream sockets ([README](project1/README.md), git tag `project1`) |
 
-Simultaneous winning lines or a full board are a draw. If any player leaves or
-becomes unreachable, the match is cancelled for everyone.
+| | Project 1 | Project 2/3 |
+|---|---|---|
+| Transport | UNIX stream socket (`AF_UNIX`), one machine | TCP (`AF_INET`), any reachable machine |
+| Player identity | Kernel-reported UID (`SO_PEERCRED`) | One-time seat token issued by the referee |
+| Failure detection | Kernel closes the socket when a process dies | Heartbeats: a silent peer is dropped after 6 s |
+| Stalled receiver | A blocked `sendall` could freeze the referee | Sends time out after 6 s and the peer is dropped |
+| Lobby | Fixed 30 s | Starts as soon as three players join (120 s limit) |
+
+The game rules, message format (one JSON object per line) and library API are
+otherwise unchanged, so the two `communication.py` files can be compared
+directly.
 
 ## Simulating several machines on one host
 
@@ -99,6 +150,7 @@ Dependencies: `python3`, `tmux`, `iproute2` (`ip`, `tc`) and `util-linux`
 (`runuser`). On Debian/Ubuntu, `up` and `demo` install any that are missing.
 `cut` and `delay` also need the `sch_netem` kernel module, which on some
 Ubuntu kernels comes from the `linux-modules-extra-$(uname -r)` package.
+
 The same thing by hand, in four terminals:
 
 ```bash
