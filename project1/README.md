@@ -1,4 +1,7 @@
-# Connect-4 Mayhem
+# Connect-4 Mayhem (Project 1)
+
+> This folder is the Project 1 version, kept as submitted (git tag `project1`).
+> The current version is described in the [top-level README](../README.md).
 
 A terminal game for **three players**, each with their own symbol: `X`, `O`, or
 `@`. Connect four of your discs horizontally, vertically, or diagonally on a
@@ -36,13 +39,13 @@ On Ubuntu/Debian with Git installed, clone the repo and run:
 
 ```bash
 git clone https://github.com/jugal2001/connect4.git connect4-mayhem
-cd connect4-mayhem
+cd connect4-mayhem/project1
 sudo ./setup.sh
 ./launch_game.sh --bots
 ```
 
 Setup installs the dependencies and creates the game accounts. The last command starts a game
-against two bots. Run all commands from the game folder.
+against two bots. Run all commands from the `project1` folder.
 
 You join as **Host**, and the game starts immediately with two bots. When you
 see **YOUR TURN**, enter a column number from `1` to `7` to drop a disc.
@@ -180,7 +183,7 @@ not search several turns ahead.
 
 ## Communications library
 
-> **The communications library is [`communication.py`](communication.py), in the top level of this repository.**
+> **The communications library is [`communication.py`](communication.py), in this `project1` folder.**
 > `setup.sh` also installs a copy at `/opt/connect4-mayhem/communication.py`, which is used by the separate-Linux-account mode.
 
 All interprocess communication in the game goes through this one file. `server.py` and `client.py` never open sockets themselves.
@@ -222,4 +225,4 @@ Messages are plain Python dictionaries. Each connection has a reader thread that
 | [`tests/test_game.py`](tests/test_game.py) | Tests for the game rules and bot logic |
 | [`tests/test_integration.py`](tests/test_integration.py) | End-to-end tests over real sockets (lobby timing, privacy, bot fill) |
 
-Run the tests from the repository root with `python3 -m unittest discover -s tests`.
+Run the tests from the `project1` folder with `python3 -m unittest discover -s tests`.
